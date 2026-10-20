@@ -113,7 +113,7 @@ export async function settings(ui: ExtensionUIContext, loaded: LoadedConfig, rec
       panel.report(await testCapture(ui, c, recorder, op, createProvider(p(), consents)));
     } },
     { id: 'doctor', label: 'Diagnóstico', value: () => 'Verificar ambiente', description: 'FFmpeg, dispositivos e STT. Nenhum áudio é enviado.', activate: async (panel, op) => {
-      ensureIdle(); const result = await doctor({ ...loaded, config: c, consents }, recorder, op, context.shortcut ?? loaded.config.shortcut); ui.notify(result); panel.report('Diagnóstico exibido nas notificações.');
+      ensureIdle(); const result = await doctor({ ...loaded, config: c, consents }, recorder, op, context.shortcut ?? loaded.config.shortcut); op.throwIfAborted(); ui.notify(result); panel.report('Diagnóstico exibido nas notificações.');
     } },
     { id: 'capture', label: context.state === 'RECORDING' ? 'Parar e transcrever' : 'Iniciar ditado', value: () => 'Enter', description: 'Fecha o painel e usa a configuração já salva. Ctrl+S salva alterações antes de iniciar.', activate: panel => {
       if (snapshot() !== saved) { panel.report('Salve as alterações com Ctrl+S antes de iniciar o ditado.'); return; }

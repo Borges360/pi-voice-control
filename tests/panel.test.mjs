@@ -24,3 +24,8 @@ test('parent abort closes panel and drains a late operation without late UI writ
   let drained=false;const drain=f.panel.drain().then(()=>{drained=true;});await tick();assert.equal(drained,false);
   task.resolve();await drain;assert.equal(cancelled,true);assert.ok(!f.panel.render(80).join('\n').includes('late'));
 });
+test('Esc cancels a running action; its late success never replaces cancellation',async()=>{
+  const result=deferred();const f=fixture(async p=>{await result.promise;p.report('late success');});
+  f.panel.handleInput('\r');await tick();f.panel.handleInput('\x1b');result.resolve();await f.panel.drain();
+  assert.match(f.panel.render(80).join('\n'),/Operação cancelada/);assert.ok(!f.panel.render(80).join('\n').includes('late success'));assert.equal(f.closed(),0);f.panel.dispose();
+});

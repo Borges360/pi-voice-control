@@ -47,7 +47,7 @@ export class SettingsPanel implements Component, PanelApi {
     this.options.signal.removeEventListener('abort', this.abort);
   }
   close(action?: string) { if (this.closed) return; this.dispose(); this.done(action); }
-  report(message: string) { if (!this.closed) { this.status = message; this.renderRequest(); } }
+  report(message: string) { if (!this.closed && !this.busy?.signal.aborted) { this.status = message; this.renderRequest(); } }
   input(title: string, value: string): Promise<string | undefined> {
     if (this.closed || this.busy?.signal.aborted) return Promise.resolve(undefined);
     return new Promise(resolve => {
@@ -80,6 +80,7 @@ export class SettingsPanel implements Component, PanelApi {
     finally {
       this.busy = undefined;
       if (!this.closed) {
+        if (abort.signal.aborted) this.status = 'Operação cancelada.';
         this.renderRequest();
         if (this.saveAfterEdit) { this.saveAfterEdit = false; void this.run(signal => this.options.save(this, signal)); }
       }
@@ -105,7 +106,7 @@ export class SettingsPanel implements Component, PanelApi {
       }
       return;
     }
-    if (this.busy) { if (cancel) { this.busy.abort(); this.report('Cancelando…'); } return; }
+    if (this.busy) { if (cancel) { this.busy.abort(); this.status = 'Cancelando…'; this.renderRequest(); } return; }
     if (matchesKey(data, 'ctrl+s')) { void this.run(signal => this.options.save(this, signal)); return; }
     if (cancel) {
       if (this.options.dirty() && !this.discardPending) { this.discardPending = true; this.report('Alterações não salvas. Ctrl+S salva; Esc novamente descarta.'); }

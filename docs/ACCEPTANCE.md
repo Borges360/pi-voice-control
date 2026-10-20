@@ -131,7 +131,7 @@ Taxa de acerto PT-BR/identificadores e latência de inferência ainda não medid
   As configurações reais do usuário não foram salvas por esse smoke.
 - Testes por teclado cobrem Ctrl+S, rascunho, descarte, consentimento, menu sem
   IO na abertura, erros de save, cancelamento e drenagem de ação atrasada.
-- `npm test`: **74 aprovados**. Integração: FFmpeg real e Whisper offline real
+- `npm test`: **75 aprovados**. Integração: FFmpeg real e Whisper offline real
   aprovados; captura de microfone físico não habilitada. Instalação do tarball
   com dependências de produção carregou o motor local sem dependências de dev.
   `npm audit`: zero vulnerabilidades. Factory warm: mediana 0,04 ms; p95 0,13 ms.
