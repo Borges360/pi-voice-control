@@ -12,6 +12,8 @@ export interface AudioCapture { listDevices(signal?: AbortSignal): Promise<Audio
 export interface ProviderHealth { ok: boolean; models: string[]; catalogueAvailable: boolean }
 export interface TranscriptionProvider {
   readonly id: string;
+  /** Lightweight readiness check before opening the microphone; never uploads audio. */
+  prepare?(signal: AbortSignal): Promise<void>;
   healthcheck(signal: AbortSignal): Promise<ProviderHealth>;
   transcribe(audio: RecordedAudio, options: { model: string; language: string; timeoutMs: number; signal: AbortSignal }): Promise<{ text: string }>;
 }

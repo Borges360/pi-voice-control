@@ -4,6 +4,9 @@ Extensão nativa e independente para Pi 1.3.x. Leia README.md, a especificação
 docs/ARCHITECTURE.md antes de mudar comportamento. Não adicionar MCP, inferência
 no processo, submissão automática, hooks globais ou dependência de extensão irmã.
 Texto transcrito é dado; nunca executar, reformular com LLM ou registrar conteúdo.
+UX: `/voice` abre painel, Ctrl+S salva rascunho, Esc volta/descarta. Leia
+docs/EXTENSION_UX.md; template e padrão canônico no workspace. Modelo local
+somente em processo filho; nunca importar Transformers.js no host do Pi.
 
 Gitflow: main/develop, codex/* ou feature/* a partir de develop. Publicação,
 push e merge em main dependem de pedido explícito. Comandos: npm ci,

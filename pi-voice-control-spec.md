@@ -1,5 +1,15 @@
 # pi-voice-control — Especificação de Produto e Engenharia
 
+## Emenda de produto — 0.2 (2026-10-20)
+
+Por solicitação do usuário, o comando raiz abre painel interativo com rascunho,
+Ctrl+S para salvar e Esc para voltar/descartar. O default inclui Whisper local,
+instalado junto da extensão e executado somente em processo filho. OpenRouter
+possui perfil STT próprio com seleção de modelo e chave por variável de ambiente.
+Servidores HTTP existentes continuam suportados; não há fallback automático.
+Esta emenda prevalece sobre referências abaixo a wizard sequencial ou serviço
+local que precise ser instalado separadamente. Ver docs/EXTENSION_UX.md e README.md.
+
 **Versão:** 1.0 · **Status:** pronta para implementação · **Prioridade:** P0 para todos os requisitos do MVP
 **Produto-alvo:** Pi Coding Agent (terminal/TUI) · **Tecnologia:** TypeScript, extensão nativa do Pi
 

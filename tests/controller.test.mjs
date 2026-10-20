@@ -57,12 +57,21 @@ test('late STT result cannot paste, hide or unlock the next recording', async ()
   await f.c.dispose();
 });
 test('remote consent checked before even opening microphone', async () => {
-  const f = fixture(); const c = configuration(); c.transcription.profiles.local.endpoint = 'https://example.com/v1/audio/transcriptions';
+  const f = fixture(); const c = configuration(); c.transcription.profile = 'local'; c.transcription.profiles.local.endpoint = 'https://example.com/v1/audio/transcriptions';
   await f.c.start(c, []); assert.equal(f.fake.calls.start, 0); assert.ok(f.notices.some(m => m.includes('CONSENT_REQUIRED'))); assert.equal(f.c.state, 'IDLE');
 });
 test('natural capture end automatically finalizes', async () => {
   const f = fixture(); await f.c.start(configuration(), []); f.fake.end.resolve({});
   await tick(); await tick(); assert.deepEqual(f.pastes, ['Olá Kubernetes!']); assert.equal(f.c.state, 'IDLE');
+});
+
+test('unavailable STT is detected before microphone opens; cancelled preflight ignores late success',async()=>{
+  const fake=fakeCapture(); const notices=[]; const ready=deferred(); let fail=true;
+  const provider={ prepare:async()=>{if(fail) throw new VoiceError('STT_REFUSED','Serviço ausente.'); await ready.promise;},transcribe:async()=>({text:'unexpected'}) };
+  const c=new VoiceController(fake.recorder,()=>provider,{update(){},paste(){throw new Error('No paste expected');},notify:m=>notices.push(m)});
+  await c.start(configuration(),[]); assert.equal(fake.calls.start,0); assert.ok(notices.some(m=>m.includes('STT_REFUSED'))); assert.equal(c.state,'IDLE');
+  fail=false; const start=c.start(configuration(),[]); const cancel=c.cancel(); ready.resolve(); await start; await cancel;
+  assert.equal(fake.calls.start,0); assert.equal(c.state,'IDLE'); await c.dispose();
 });
 test('randomized sequential starts/stops/cancels preserve lock and insertion bounds', async () => {
   const f = fixture(); let seed = 27;

@@ -33,7 +33,7 @@
       "type": "object", "additionalProperties": false,
       "properties": {
         "profile": { "type": "string", "minLength": 1, "maxLength": 80 },
-        "timeoutMs": { "type": "integer", "minimum": 1000, "maximum": 120000, "default": 30000 },
+        "timeoutMs": { "type": "integer", "minimum": 1000, "maximum": 120000, "default": 120000 },
         "autoSubmit": { "const": false }, "cloudFallback": { "const": false },
         "profiles": {
           "type": "object", "maxProperties": 32,
@@ -41,12 +41,14 @@
           "additionalProperties": {
             "type": "object", "additionalProperties": false,
             "properties": {
-              "type": { "const": "openai-compatible" },
+              "type": { "enum": ["local", "openai-compatible", "openrouter"] },
               "endpoint": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^https?://[^?#]+/audio/transcriptions$" },
               "model": { "type": "string", "minLength": 1, "maxLength": 256 },
               "apiKeyEnv": { "type": "string", "pattern": "^[A-Z_][A-Z0-9_]{0,127}$" },
               "allowInsecureHttp": { "type": "boolean", "default": false }
-            }
+            },
+            "allOf": [{ "if": { "properties": { "type": { "const": "local" } }, "required": ["type"] },
+              "then": { "properties": { "model": { "const": "onnx-community/whisper-tiny" } }, "not": { "anyOf": [{ "required": ["endpoint"] }, { "required": ["apiKeyEnv"] }, { "required": ["allowInsecureHttp"] }] } } }]
           }
         }
       }

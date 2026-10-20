@@ -15,12 +15,21 @@ código de `pasteToEditor`, widgets e teardown de `/reload`.
   cabeçalho WAV finalizado, permissões POSIX 0600, diretório exclusivo por sessão.
 - `audio/audio-meter.ts`: RMS em janelas de 320 amostras (20ms), sem armazenar
   áudio em RAM; UI usa buffer fixo 14–20 valores, ataque 0,35/decaimento 0,18.
-- `providers/transcription.ts`: contrato independente do motor STT; adapter
-  `openai-compatible.ts` implementa fetch multipart e catálogo opcional.
-- `config/`: merge estrito/validação, perfil default local, env/CLI, save atômico.
+- `providers/transcription.ts`: contrato independente do motor STT; factory para
+  local incluído, OpenRouter JSON/base64 ou HTTP multipart e catálogo opcional.
+- `local/`: processo Node descartável com Transformers.js/ONNX CPU e Whisper tiny.
+  Biblioteca ML só é importada no processo filho. IPC transmite um resultado;
+  stdout/stderr são ignorados e não herda credenciais, NODE_OPTIONS ou flags Pi.
+  Modelo/revisão fixos; download apenas na instalação/reparo. Inferência carrega
+  os arquivos do cache e bloqueia fetch. Encerramento espera close do processo.
+- `config/`: merge estrito/validação, default builtin sem servidor, env/CLI e save atômico.
 - `security/`: política de endpoint, consentimento SHA-256 dos campos autorizados,
   sanitização de controles de terminal, sem correção semântica.
-- `ui/`: widget/status na chave `pi-voice-control`, setup e diagnóstico.
+- `ui/`: widget/status na chave `pi-voice-control`, painel transacional Ctrl+S e diagnóstico.
+
+O painel genérico em `settings-panel.ts` usa somente APIs Pi e recebe callbacks
+do produto. Não enumera dispositivos nem acessa rede ao abrir. Rascunho, save,
+discard, abort e drenagem de ações são explícitos. Nenhuma extensão irmã é necessária.
 
 ## Estados e concorrência
 
@@ -29,6 +38,8 @@ Erro: `ERROR → IDLE`. Cancelamento: `CANCELLED → IDLE` depois da limpeza.
 Nenhum resultado de geração inválida pode inserir ou limpar UI da próxima sessão.
 `stop()` é idempotente; flags de inserção são marcadas antes do paste.
 Nenhum callback externo é interpretado como código ou comando de shell.
+Antes do microfone, `prepare` verifica instalação local ou catálogo HTTP e
+credencial. Cancelamento durante essa fase invalida a abertura tardia da captura.
 
 O controller inicia um timer de duração apenas em RECORDING. O widget tem seu
 próprio timer de no máximo 10Hz somente em RECORDING. O backend também limita a
@@ -73,7 +84,8 @@ não são registrados nem persistidos. Texto fica apenas no editor que o usuári
 decidiu preencher. A chave de consentimento é um registro de escolha, não uma
 assinatura de segurança contra alguém com controle da conta do SO.
 
-Sem redirect, retries, headers arbitrários ou fallback. Resposta limitada a
+Sem seguir redirect, retries, headers arbitrários ou fallback. Redirect HTTP é
+recebido manualmente para diagnóstico e nunca seguido. Resposta limitada a
 256 KiB; texto limitado a 100.000 caracteres. Upload WAV limitado a 3.840.044
 bytes (até 120s); buffer multipart é limitado pelo mesmo teto. JSON de configuração
 limitado a 128 KiB; unknown fields, prototype pollution e opções fora do P0 são
