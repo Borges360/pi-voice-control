@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.log
+*.wav
+*.pcm
+*.tgz
+.harness/observations.jsonl
+.pi/voice-control.json
+.acceptance-local/

@@ -1,0 +1,7 @@
+workspace = "homelab"
+project = "pi-voice-control"
+server = "https://memory.lab/mcp"
+
+[briefing]
+inject_on_session_start = "true"
+max_chars = 4000
