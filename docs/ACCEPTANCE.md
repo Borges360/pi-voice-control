@@ -57,7 +57,10 @@ transpilação e não deve ser confundido com o benchmark da fábrica warm.
 
 Comandos adicionais de entrega: `npm run lint`, `npm pack --dry-run`, `npm audit`,
 `node .harness/project.mjs verify` e `harness doctor` (path do projeto).
-CI versionado para Windows/Linux com Node 22/24; execução remota depende do host.
+CI validou Windows/Linux com Node 22/24 no GitHub Actions. O scan usa o mesmo
+Gitleaks v8.30.1 fixado por digest no harness, em container sem rede e com
+redação total. Varreduras locais dos 128 arquivos e do histórico Git passaram
+sem achados; nenhum arquivo foi excluído e nenhuma exceção foi cadastrada.
 
 O marker ai-memory está alinhado ao harness (`homelab/pi-voice-control`, sem
 fallback `default`). O servidor ainda não possui esse projeto; a consulta de
