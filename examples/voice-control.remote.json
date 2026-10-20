@@ -1,0 +1,15 @@
+{
+  "language": "pt",
+  "transcription": {
+    "profile": "remote", "timeoutMs": 30000, "autoSubmit": false, "cloudFallback": false,
+    "profiles": {
+      "remote": {
+        "type": "openai-compatible",
+        "endpoint": "https://api.openai.com/v1/audio/transcriptions",
+        "model": "gpt-4o-mini-transcribe",
+        "apiKeyEnv": "OPENAI_API_KEY"
+      }
+    }
+  },
+  "privacy": { "retainAudio": false, "retainTranscripts": false, "telemetry": false }
+}
