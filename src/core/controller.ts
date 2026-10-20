@@ -34,6 +34,11 @@ export class VoiceController {
   private async begin(op: Operation, consents: readonly string[]): Promise<void> {
     try {
       requireConsent(op.config.transcription.profiles[op.config.transcription.profile]!, consents);
+      const provider = this.provider(op.config);
+      if (provider.prepare) {
+        await provider.prepare(op.abort.signal);
+        if (!this.current(op)) return;
+      }
       const capture = await this.recorder.start({ ...op.config.capture, onLevel: rms => {
         if (this.current(op)) { this.view.rms = rms; this.lastLevelAt = performance.now(); }
       } }, op.abort.signal);

@@ -9,13 +9,14 @@ no Windows Terminal com voz e motor de transcrição real.
 - Windows x64, Node 24.14.0, Pi instalado 1.3.0 (`@earendil-works/*`).
 - FFmpeg executável no PATH; enumeração DirectShow encontrou 1 entrada de áudio.
 - Nenhuma captura de microfone físico feita pelo agente durante implementação.
-- `/voice doctor` no Pi real encontrou STT loopback padrão indisponível
+- Na versão 0.1, `/voice doctor` no Pi real encontrou STT loopback padrão indisponível
   (`STT_NETWORK` em `127.0.0.1:8000`); não houve troca de provedor.
 - Nenhum request com áudio para provedor externo; testes remotos usam fetch mock.
 
 ## Validação automatizada
 
-`npm test`: **61 testes aprovados**. FSM, lock, cancelamento STARTING/RECORDING/FINALIZING/TRANSCRIBING,
+Baseline 0.1: `npm test`, **61 testes aprovados**. A revisão 0.2 é descrita ao final.
+FSM, lock, cancelamento STARTING/RECORDING/FINALIZING/TRANSCRIBING,
 resultado tardio, stop idempotente, troca de geração, erro/silêncio sem paste,
 configuração/schema/preferências, consentimento e wizard, HTTP multipart real em
 loopback, catálogo opcional, 401/403/429/500, JSON malformado, corpo excessivo,
@@ -69,11 +70,11 @@ não depende desse serviço.
 
 ## Roteiro humano — Windows Terminal / PowerShell
 
-1. Inicie um STT local multilíngue compatível; confira seu modelo e endpoint.
-   Abra `pi -e C:\Users\felip\Desenvolvimento\pi-voice-control`.
-2. `/voice settings`: escolha o microfone, `pt`, Local, endpoint/modelo exatos.
+1. Instale a extensão normalmente; o postinstall prepara Whisper local. Abra
+   `pi -e C:\Users\felip\Desenvolvimento\pi-voice-control`.
+2. `/voice`: escolha o microfone, `pt`, Local incluído e salve com Ctrl+S.
    Autorize teste de captura curta; fale; confira waveform real e feedback RMS.
-   Autorize STT de teste; confirme sucesso sem mudança no editor. Salve.
+   Autorize STT de teste; confirme sucesso sem mudança no editor. Feche com Esc.
 3. `/voice doctor`: confirme FFmpeg, seleção e catálogo (se disponível).
 4. Digite texto multilinha com acentos e posicione cursor no meio. F8 → fale
    "Kafka, Kubernetes, OAuth2, Spring Boot, MCP" → F8. Confira inserção única,
@@ -91,7 +92,7 @@ não depende desse serviço.
 9. `/reload` durante gravação/transcrição e encerramento do Pi. Verifique que o
    FFmpeg da operação terminou e o diretório temporário foi removido. Teste mudança
    de sessão/fork para garantir que texto não vá ao editor errado.
-10. Em `/voice settings`, escolha API externa. Leia o aviso de endpoint/modelo e
+10. Em `/voice`, escolha OpenRouter ou servidor/API. Leia o aviso de endpoint/modelo e
     aceite apenas se quiser enviar áudio. Defina a chave no ambiente; nunca a cole
     no JSON. Faça um teste aprovado; alterne local/remote com `/voice profile`.
     Recuse consentimento em um perfil novo e confirme zero uploads.
@@ -116,3 +117,28 @@ Taxa de acerto PT-BR/identificadores e latência de inferência ainda não medid
 | 8. Testes automatizados | Implementados e executados |
 | 9. Manual Windows Terminal | **Pendente de execução humana** |
 | 10. Consentimento explícito | Bloqueios e wizard testados; zero upload externo na implementação |
+
+## Evidências da revisão 0.2 — 2026-10-20
+
+- Causa reproduzida do erro relatado: `ECONNREFUSED` em `127.0.0.1:8000`, usando
+  o default legado. Agora o default é Whisper incluído, sem servidor HTTP.
+- Modelo Whisper tiny multilíngue instalado, revisão fixada e carregada em
+  processo separado. Inferência offline com `fetch` bloqueado transcreveu WAV
+  sintético em português de aproximadamente 9,5 s em cerca de 2,5 s nesta máquina.
+  É evidência de integração real com motor/modelo, não medição com voz humana.
+- Pi 1.3.0 em PTY Windows real: `/voice` abriu painel, navegação por setas,
+  Testar conexão confirmou motor offline e Esc restaurou editor; Ctrl+D encerrou.
+  As configurações reais do usuário não foram salvas por esse smoke.
+- Testes por teclado cobrem Ctrl+S, rascunho, descarte, consentimento, menu sem
+  IO na abertura, erros de save, cancelamento e drenagem de ação atrasada.
+- `npm test`: **75 aprovados**. Integração: FFmpeg real e Whisper offline real
+  aprovados; captura de microfone físico não habilitada. Instalação do tarball
+  com dependências de produção carregou o motor local sem dependências de dev.
+  `npm audit`: zero vulnerabilidades. Factory warm: mediana 0,04 ms; p95 0,13 ms.
+- Adapter OpenRouter usa endpoint STT JSON/base64 e catálogo filtrado.
+  Testes pagos/autenticados com áudio externo não foram executados.
+- Teste opcional repetível: `VOICE_LOCAL_TEST=1 npm run test:integration`, com
+  `VOICE_LOCAL_WAV` apontando para WAV PCM16 mono/16k de fixture sintética em pt.
+  O teste local bloqueia rede durante inferência. CI padrão não baixa modelos.
+
+O aceite humano no Windows Terminal com microfone físico continua pendente.

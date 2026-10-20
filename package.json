@@ -1,23 +1,67 @@
 {
   "name": "@borges360/pi-voice-control",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Native Pi dictation with supervised FFmpeg capture and private, pluggable STT",
   "type": "module",
   "license": "MIT",
-  "engines": { "node": ">=22.19.0" },
-  "keywords": ["pi-package", "pi-extension", "dictation", "speech-to-text"],
-  "repository": { "type": "git", "url": "https://github.com/Borges360/pi-voice-control.git" },
-  "pi": { "extensions": ["./index.ts"] },
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
-  "files": ["index.ts", "src", "dist", "schemas", "examples", "README.md", "LICENSE", "docs", "pi-voice-control-spec.md"],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "dictation",
+    "speech-to-text"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Borges360/pi-voice-control.git"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "index.ts",
+    "src",
+    "dist",
+    "schemas",
+    "examples",
+    "README.md",
+    "LICENSE",
+    "docs",
+    "scripts/setup-local.mjs",
+    "pi-voice-control-spec.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test tests/*.test.mjs",
     "test:integration": "npm run build && node --test tests/integration/*.test.mjs",
     "benchmark": "npm run build && node scripts/benchmark.mjs",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "postinstall": "node scripts/setup-local.mjs",
+    "setup:local": "node scripts/setup-local.mjs"
   },
-  "peerDependencies": { "@earendil-works/pi-coding-agent": ">=1.3.0 <1.4.0", "@earendil-works/pi-tui": ">=1.3.0 <1.4.0" },
-  "devDependencies": { "@earendil-works/pi-coding-agent": "1.3.0", "@earendil-works/pi-tui": "1.3.0", "@types/node": "24.10.1", "typescript": "5.9.3", "ajv": "8.20.0" }
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=1.3.0 <1.4.0",
+    "@earendil-works/pi-tui": ">=1.3.0 <1.4.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "1.3.0",
+    "@earendil-works/pi-tui": "1.3.0",
+    "@types/node": "24.10.1",
+    "ajv": "8.20.0",
+    "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "4.3.1"
+  }
 }

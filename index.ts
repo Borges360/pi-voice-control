@@ -6,7 +6,7 @@ import { FFmpegRecorder } from './src/audio/ffmpeg-recorder.js';
 import { cleanupOrphans } from './src/audio/wav-writer.js';
 import { VoiceController } from './src/core/controller.js';
 import { userError } from './src/core/types.js';
-import { OpenAICompatibleProvider } from './src/providers/openai-compatible.js';
+import { createProvider } from './src/providers/factory.js';
 import { VoiceIndicator } from './src/ui/voice-indicator.js';
 import { InputGate, normalizeFunctionKey } from './src/ui/input-gate.js';
 import { settings } from './src/ui/settings.js';
@@ -47,7 +47,7 @@ export default function voiceControl(pi: ExtensionAPI): void {
     const loaded = refresh(ctx); const recorder = new FFmpegRecorder(loaded.ffmpegPath);
     let controller!: VoiceController;
     const indicator = new VoiceIndicator(ctx.ui, loaded.config.ui, () => controller.snapshot());
-    controller = new VoiceController(recorder, c => new OpenAICompatibleProvider(c.transcription.profiles[c.transcription.profile]!, refresh(ctx).consents), {
+    controller = new VoiceController(recorder, c => createProvider(c.transcription.profiles[c.transcription.profile]!, refresh(ctx).consents), {
       update: v => indicator.update(v), paste: text => ctx.ui.pasteToEditor(text), notify: (message, kind) => ctx.ui.notify(message, kind),
     });
     runtime = { ctx, loaded, recorder, controller, indicator }; gate = new InputGate(loaded.config.debounceMs);
@@ -74,7 +74,7 @@ export default function voiceControl(pi: ExtensionAPI): void {
     else if (!r.controller.busy) { const l = refresh(ctx); await r.controller.start(l.config, l.consents); }
     else ctx.ui.notify('Voz ocupada; /voice cancel para cancelar.', 'warning');
   }) });
-  pi.registerCommand('voice', { description: 'Ditado: start, stop, cancel, status, settings, doctor, profile', handler: (args, ctx) => protect(ctx, async () => {
+  pi.registerCommand('voice', { description: 'Abrir menu de voz (Ctrl+S salva); start, stop, cancel, status, settings, doctor, profile', handler: (args, ctx) => protect(ctx, async () => {
     const [command = '', ...rest] = args.trim().split(/\s+/);
     const r = get(ctx); if (!r) return;
     if (command === 'cancel') { setupAbort?.abort(); await r.controller.cancel(); return; }
@@ -89,14 +89,19 @@ export default function voiceControl(pi: ExtensionAPI): void {
       if (!name) ctx.ui.notify(`Perfis: ${Object.keys(l.config.transcription.profiles).join(', ')}; ativo: ${l.config.transcription.profile}.`);
       else if (!Object.hasOwn(l.config.transcription.profiles, name)) ctx.ui.notify('Perfil desconhecido.', 'warning');
       else { profileOverride = name; ctx.ui.notify(`Perfil ${name} selecionado para próxima gravação; autorização externa será verificada antes de capturar.`); }
-    } else if (command === 'settings' || command === 'doctor') {
-      if (r.controller.busy) { ctx.ui.notify('Encerre ou cancele a gravação antes de configurar.', 'warning'); return; }
+    } else if (command === '' || command === 'settings' || command === 'doctor') {
+      if (r.controller.busy && command === 'doctor') { ctx.ui.notify('Encerre ou cancele a gravação antes de diagnosticar.', 'warning'); return; }
       setupAbort = new AbortController(); const abort = setupAbort;
+      let action: string | undefined;
       try {
         const l = refresh(ctx);
-        if (command === 'settings') { setupTask = settings(ctx.ui, l, r.recorder, abort.signal); await setupTask; profileOverride = undefined; }
+        if (command !== 'doctor') { setupTask = settings(ctx.ui, l, r.recorder, abort.signal, { state: r.controller.state, busy: r.controller.busy, shortcut, onSaved: () => { profileOverride = undefined; } }); action = await setupTask as string | undefined; }
         else { setupTask = doctor(l, r.recorder, abort.signal, shortcut); ctx.ui.notify(await setupTask as string); }
       } finally { if (setupAbort === abort) { setupAbort = undefined; setupTask = undefined; } }
+      if (abort.signal.aborted) return;
+      if (action === 'start' && gate.focused) { const l = refresh(ctx); await r.controller.start(l.config, l.consents); }
+      if (action === 'stop') await r.controller.stop();
+      if (action === 'cancel') await r.controller.cancel();
     } else ctx.ui.notify(`Voz: ${r.controller.state}. ${shortcut.toUpperCase()} inicia/para; /voice start | stop | cancel | status | settings | doctor | profile [nome]. Texto é colado para revisão, sem envio automático.`);
   }) });
   pi.on('ui_prompt_start', () => { ++modalDepth; });

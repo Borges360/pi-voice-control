@@ -20,11 +20,13 @@ test('interactive wiring: F8 start/stop, focus, modal, reload teardown, existing
   const root=await mkdtemp(resolve(tmpdir(),'voice-extension-test-')); const originalCwd=process.cwd();
   const descriptors=[process.stdin,process.stdout].map(s=>Object.getOwnPropertyDescriptor(s,'isTTY')); const stdoutWrite=process.stdout.write;
   const envFfmpeg=process.env.PI_VOICE_FFMPEG;
+  const originalFetch=globalThis.fetch;
   const commands=new Map(),shortcuts=new Map(),handlers=new Map(),flags=new Map(),notices=[]; let input,unsub=0;
   const api={ registerFlag:(k,v)=>flags.set(k,v),getFlag:()=>undefined,registerShortcut:(k,v)=>shortcuts.set(k,v),registerCommand:(k,v)=>commands.set(k,v),on:(k,h)=>handlers.set(k,h) };
   const ui={ notify:m=>notices.push(m),setWidget(){},setStatus(){},onTerminalInput:h=>{ input=h; return()=>++unsub; },pasteToEditor(){ throw new Error('Must not paste'); } };
   try {
-    process.chdir(root); await mkdir(resolve(root,'.pi')); await writeFile(resolve(root,'.pi/voice-control.json'),JSON.stringify({ shortcut:'f9',capture:{ deviceId:'test mic' } }));
+    process.chdir(root); await mkdir(resolve(root,'.pi')); await writeFile(resolve(root,'.pi/voice-control.json'),JSON.stringify({ shortcut:'f9',capture:{ deviceId:'test mic' },transcription:{profile:'local'} }));
+    globalThis.fetch=async()=>Response.json({data:[]});
     process.env.PI_VOICE_FFMPEG='missing-ffmpeg-for-extension-test';
     Object.defineProperty(process.stdin,'isTTY',{ configurable:true,value:true }); Object.defineProperty(process.stdout,'isTTY',{ configurable:true,value:true }); process.stdout.write=function(data,...args) { return String(data).includes('\x1b[?1004')?true:stdoutWrite.call(this,data,...args); };
     voiceControl(api); assert.ok(shortcuts.has('f9')); const ctx={ cwd:root,hasUI:true,ui };
@@ -38,6 +40,7 @@ test('interactive wiring: F8 start/stop, focus, modal, reload teardown, existing
     await handlers.get('session_shutdown')(); assert.equal(unsub,1);
   } finally {
     process.chdir(originalCwd); process.stdout.write=stdoutWrite;
+    globalThis.fetch=originalFetch;
     for(const [i,stream] of [process.stdin,process.stdout].entries()) { if(descriptors[i]) Object.defineProperty(stream,'isTTY',descriptors[i]); else delete stream.isTTY; }
     if(envFfmpeg===undefined) delete process.env.PI_VOICE_FFMPEG; else process.env.PI_VOICE_FFMPEG=envFfmpeg;
     await rm(root,{ recursive:true,force:true });
