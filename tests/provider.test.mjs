@@ -65,13 +65,13 @@ test('redirect never forwards microphone audio or credentials', async () => {
     else { ++destination; res.end('{}'); }
   }, async endpoint => {
     const provider = new OpenAICompatibleProvider({ type:'openai-compatible', endpoint, model:'whisper' }, []);
-    await assert.rejects(provider.transcribe(a, options()), e => e.code === 'STT_NETWORK');
+    await assert.rejects(provider.transcribe(a, options()), e => e.code === 'STT_REDIRECT');
   }); assert.equal(destination, 0); } finally { await a.cleanup(); }
 });
 test('external adapter requires exact consent and reads only named env credential', async () => {
   const a = await audio(); let count = 0;
   const p = { type:'openai-compatible', endpoint:'https://example.com/v1/audio/transcriptions', model:'whisper', apiKeyEnv:'VOICE_TEST_KEY' };
-  const fetcher = async (_url, init) => { ++count; assert.equal(init.headers.Authorization, 'Bearer test-only'); assert.equal(init.redirect,'error'); assert.equal(init.body.get('language'), null); return Response.json({ text:'dados' }); };
+  const fetcher = async (_url, init) => { ++count; assert.equal(init.headers.Authorization, 'Bearer test-only'); assert.equal(init.redirect,'manual'); assert.equal(init.body.get('language'), null); return Response.json({ text:'dados' }); };
   try {
     const blocked = new OpenAICompatibleProvider(p, [], { VOICE_TEST_KEY: 'test-only' }, fetcher);
     await assert.rejects(blocked.transcribe(a, options()), /autorize/); await assert.rejects(blocked.healthcheck(new AbortController().signal), /autorize/); assert.equal(count, 0);
@@ -92,4 +92,24 @@ test('healthcheck optional catalogues, bad shape and safe model listing', async 
   assert.deepEqual((await provider.healthcheck(new AbortController().signal)).models,['whisper']);
   const invalid = new OpenAICompatibleProvider(p, [], {}, async () => Response.json({ nope:true }));
   await assert.rejects(invalid.healthcheck(new AbortController().signal), e => e.code === 'MODELS_FORMAT');
+});
+
+test('OpenRouter sends native STT JSON and discovers only transcription models',async()=>{
+  const a=await audio(); let calls=0;
+  const p={type:'openrouter',endpoint:'https://openrouter.ai/api/v1/audio/transcriptions',model:'openai/whisper-1',apiKeyEnv:'VOICE_TEST_KEY'};
+  try {
+    const fetcher=async(url,init)=>{
+      ++calls; assert.equal(init.headers.Authorization,'Bearer fixture-only'); assert.equal(init.redirect,'manual');
+      if(!init.method){ assert.match(String(url),/models\?output_modalities=transcription$/); return Response.json({data:[{id:p.model}]}); }
+      assert.equal(init.headers['Content-Type'],'application/json'); const body=JSON.parse(init.body);
+      assert.equal(body.model,p.model); assert.equal(body.language,'pt'); assert.equal(body.input_audio.format,'wav');
+      assert.equal(Buffer.from(body.input_audio.data,'base64').toString('ascii',0,4),'RIFF'); assert.equal(body.messages,undefined);
+      return Response.json({text:'Ditado literal; sem reformulação.'});
+    };
+    const provider=new OpenAICompatibleProvider(p,[consentId(p)],{VOICE_TEST_KEY:'fixture-only'},fetcher);
+    await provider.healthcheck(new AbortController().signal);
+    assert.deepEqual(await provider.transcribe(a,{...options(),model:p.model}),{text:'Ditado literal; sem reformulação.'}); assert.equal(calls,2);
+    const blocked=new OpenAICompatibleProvider(p,[],{VOICE_TEST_KEY:'fixture-only'},fetcher);
+    await assert.rejects(blocked.transcribe(a,{...options(),model:p.model}),e=>e.code==='CONSENT_REQUIRED'); assert.equal(calls,2);
+  }finally{await a.cleanup();}
 });

@@ -10,7 +10,7 @@ import { loadConfig, saveGlobal } from '../dist/src/config/load.js';
 test('defaults and both examples satisfy real JSON schema and runtime validation', async () => {
   const schema = JSON.parse(await readFile(new URL('../schemas/voice-control.schema.json', import.meta.url), 'utf8'));
   const validate = new Ajv().compile(schema);
-  for (const value of [defaults, ...await Promise.all(['local','remote'].map(async name => JSON.parse(await readFile(new URL(`../examples/voice-control.${name}.json`, import.meta.url), 'utf8'))))]) {
+  for (const value of [defaults, ...await Promise.all(['local','remote','openrouter'].map(async name => JSON.parse(await readFile(new URL(`../examples/voice-control.${name}.json`, import.meta.url), 'utf8'))))]) {
     assert.ok(validate(value), JSON.stringify(validate.errors)); assert.ok(validateConfig(mergeConfig(defaults, value)));
   }
 });

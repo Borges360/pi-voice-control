@@ -1,0 +1,14 @@
+{
+  "language": "pt",
+  "transcription": {
+    "profile": "openrouter",
+    "profiles": {
+      "openrouter": {
+        "type": "openrouter",
+        "endpoint": "https://openrouter.ai/api/v1/audio/transcriptions",
+        "model": "openai/whisper-1",
+        "apiKeyEnv": "OPENROUTER_API_KEY"
+      }
+    }
+  }
+}
