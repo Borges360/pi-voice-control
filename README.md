@@ -1,142 +1,107 @@
 # pi-voice-control
 
-Ditado nativo para **Pi Coding Agent 1.3.x**. Pressione **F8**, fale e pressione
-**F8** novamente: o texto entra no editor para revisão, sem envio automático ao
-agente. Captura FFmpeg, waveform RMS real, Whisper local incluído e STT remoto escolhido
-explicitamente. Sem MCP, TTS, LLM de reformulação ou modelo carregado no Pi.
+Ditado nativo para **Pi Coding Agent 1.3.x**, com Whisper **100% local**.
+Pressione **F8**, fale e pressione **F8** novamente: o texto entra no editor para
+revisão, sem envio automático ao agente. FFmpeg captura áudio e a waveform reage
+às amostras RMS reais. Escolha entre **tiny, base e small**, em português ou outros idiomas.
 
-## Começar
+## Instalar
 
-Requisitos: Node >=22.19, `@earendil-works/pi-coding-agent` 1.3.x e FFmpeg no PATH.
-No Windows, habilite **Configurações → Privacidade e segurança → Microfone →
-Permitir que aplicativos da área de trabalho acessem seu microfone**.
-
-```powershell
-cd C:\Users\felip\Desenvolvimento\pi-voice-control
-npm ci
-pi -e .
-```
-
-No Pi, execute **`/voice`**. O painel mostra provedor, microfone, idioma, modelo e
-atalho. Use **↑↓** para navegar, **Enter** para editar e **Ctrl+S** para salvar.
-**Esc** volta de uma edição; no painel avisa antes de descartar alterações.
-Salvar mantém o menu aberto. Não há autosave nem gravação ao abrir o menu.
-
-O padrão é **Local incluído (Whisper)**. A instalação prepara o modelo multilíngue
-quantizado (~45 MB) no cache do usuário. Não exige Python, Docker ou servidor STT.
-Se o download falhar ou scripts de instalação forem bloqueados, abra
-`/voice → Preparar motor local`; há progresso e Esc cancela. Também é possível
-executar `npm run setup:local` no diretório do pacote.
-
-No painel, selecione o microfone e use **Testar microfone** ou **Testar ditado**.
-Os testes gravam somente após confirmação e descartam áudio/texto. Depois salve,
-feche o menu e teste F8 → fala → F8 com texto já existente no editor.
-
-Para instalar pelo mecanismo nativo do Pi, depois de revisar o código:
+Requisitos: Node >=22.19, Pi 1.3.x e FFmpeg no PATH.
+No Windows, habilite o acesso de aplicativos da área de trabalho ao microfone.
 
 ```powershell
-pi install C:\Users\felip\Desenvolvimento\pi-voice-control
-# Ou a fonte Git:
 pi install git:github.com/Borges360/pi-voice-control
 ```
 
-Não é preciso executar build para carregar `index.ts`. `npm run build` gera a
-entrada ESM em `dist/index.js` para consumidores do pacote.
+A instalação baixa **somente o tiny por padrão** (~45 MB), do Hugging Face para
+`~/.pi/agent/cache/voice-control`, fora da extensão e do seu projeto.
+**Nenhum peso de modelo está no Git nem no pacote publicado.** Não exige Python,
+Docker, chave de API ou servidor. Após o download, a transcrição funciona offline.
 
-## Local incluído, OpenRouter ou servidor
+Para escolher outro modelo já na instalação, no PowerShell:
 
-O default usa Whisper tiny multilíngue (`onnx-community/whisper-tiny`), idioma
-`pt`, em processo Node separado do Pi. Pesos e runtime vêm da instalação; a
-inferência funciona offline e não acessa a rede. A revisão do modelo está fixada
-no código. O serviço inicia sob demanda e termina após a operação, cancelamento
-ou encerramento do Pi. O modelo tiny prioriza instalação leve e CPU; nomes
-técnicos e fala com ruído podem ter menor precisão.
+```powershell
+$env:PI_VOICE_MODEL = 'base' # tiny, base ou small
+pi install git:github.com/Borges360/pi-voice-control
+Remove-Item Env:PI_VOICE_MODEL
+```
 
-Para usar sua API **OpenRouter**, escolha o provedor no menu, configure o **nome**
-da variável `OPENROUTER_API_KEY` e selecione **Modelo**. O catálogo mostra somente
-modelos STT. Salve com Ctrl+S e autorize o endpoint/modelo escolhido. A integração
-usa `/api/v1/audio/transcriptions` com áudio base64 JSON, sem chat ou reformulação.
-Consulte a [documentação STT do OpenRouter](https://openrouter.ai/docs/guides/overview/multimodal/stt).
-O menu informa se a variável está presente, sem revelar o valor. A chave precisa
-estar no ambiente do processo antes de abrir o Pi.
+A escolha da instalação fica no cache como default; configurações explicitamente
+salvas no Pi mantêm prioridade. Atualizações reaproveitam o cache e o modelo salvo.
+Com scripts bloqueados, rede indisponível ou `PI_VOICE_SKIP_LOCAL_SETUP=1`, o menu
+continua disponível e informa como baixar o modelo antes de gravar.
 
-Servidores HTTP compatíveis, como Speaches no homelab, continuam disponíveis no
-perfil `local` legado ou em perfis JSON próprios. Configure uma URL real; não há
-servidor presumido em `127.0.0.1:8000`. Uma configuração antiga explicitamente
-salva é preservada: para migrar, escolha **Local incluído** e salve com Ctrl+S.
+## Escolher o modelo
 
-Qualquer servidor que aceite multipart OpenAI-compatible pode ser usado. A API
-recebe `file=audio.wav`, `model`, `response_format=json` e `language`; `auto` omite
-o idioma. O retorno deve ser JSON com `text`. Catálogo `/v1/models` é opcional.
+Execute **`/voice` → Modelo → tiny, base ou small → Ctrl+S**.
+Enter abre/edita, ↑↓ navega e Esc volta ou cancela. As alterações são rascunho.
+Ctrl+S baixa o modelo escolhido, se necessário, e só salva após o preparo terminar.
+Download interrompido ou com erro preserva a configuração anterior.
+A ação **Preparar modelo** permite baixar/reparar explicitamente o modelo do rascunho.
+Abrir o painel ou apenas navegar na lista não inicia downloads nem gravações.
 
-Para API externa, selecione o perfil em `/voice` e confirme o envio de
-áudio. Defina a chave no ambiente **antes de abrir o Pi**; forneça ao assistente
-somente o **nome** da variável, por exemplo `OPENAI_API_KEY`. Nunca cole a chave
-na configuração ou no prompt. Há exemplos em `examples/`.
+| Modelo | Download aproximado (q8) | Prioridade |
+| --- | ---: | --- |
+| tiny | 45 MB | Leveza e rapidez |
+| base | 80 MB | Equilíbrio entre precisão e processamento |
+| small | 255 MB | Mais precisão, maior consumo de CPU e memória |
 
-Copiar o exemplo remoto **não autoriza uploads**. O consentimento global vincula
-endpoint, modelo, variável de credencial e política HTTP. Mudança nesses campos
-exige nova autorização. Não há fallback nem retry automático de upload.
+São modelos multilíngues, com repositório e revisão fixos; idioma padrão `pt`.
+O tamanho de download não é o consumo de RAM. Desempenho depende do computador.
+O processo de inferência separado usa CPU e ONNX Runtime, encerrando ao terminar.
+Somente instalação/reparo acessa a rede; durante a transcrição, fetch é bloqueado.
+Não há integração com APIs externas, OpenRouter, servidor HTTP ou fallback em nuvem.
 
-## Comandos
+Use **Verificar modelo**, **Testar microfone** ou **Testar ditado** no painel.
+Testes de microfone pedem confirmação e descartam áudio/texto. O teste de ditado
+usa o modelo selecionado no rascunho e exige que ele já esteja preparado.
+
+## Comandos e configuração
 
 | Comando | Ação |
 | --- | --- |
-| `/voice` | Painel interativo; Ctrl+S salva; não abre microfone |
-| `/voice start` | Inicia captura mediante ação no terminal |
-| `/voice stop` | Finaliza, transcreve e cola uma vez |
-| `/voice cancel` | Descarta captura/requisição, preserva editor |
-| `/voice status` | Estado, microfone, perfil, modelo, idioma, atalho |
-| `/voice settings` | Alias para o mesmo painel e testes opcionais |
-| `/voice doctor` | FFmpeg, dispositivos, ambiente, catálogo e diagnóstico |
-| `/voice profile [nome]` | Lista/troca perfil na sessão; vale na próxima gravação |
+| `/voice` ou `/voice settings` | Abre o painel; Ctrl+S salva |
+| `/voice start` | Inicia gravação |
+| `/voice stop` | Encerra, transcreve e cola uma vez |
+| `/voice cancel` | Cancela e preserva o editor |
+| `/voice status` | Estado, modelo, microfone, idioma e atalho |
+| `/voice doctor` | Diagnóstico de FFmpeg, dispositivos e modelo offline |
+| `/voice model [tiny\|base\|small]` | Lista/troca modelo só na sessão; use o painel para baixar/salvar |
 
-No painel, Esc volta/cancela e Enter edita. Fora dele, as teclas mantêm a
-semântica do Pi. Use `/voice cancel` para descartar voz.
-Durante transcrição, novos inícios são recusados. Trocar sessão, árvore, fork,
-`/reload` ou encerrar cancela a operação e libera os recursos.
+Configuração global: `~/.pi/agent/voice-control.json`.
+Override por projeto: `.pi/voice-control.json`, ignorado pelo Git.
+JSON parcial, com [schema](schemas/voice-control.schema.json):
 
-## Configuração
+```json
+{
+  "language": "pt",
+  "transcription": { "model": "base" }
+}
+```
 
-Arquivo global: `~/.pi/agent/voice-control.json`. Override do projeto:
-`.pi/voice-control.json` (ignorado pelo Git). Ambos aceitam JSON parcial; o
-[schema](schemas/voice-control.schema.json) documenta os campos.
-
-Precedência: **flags CLI > env > projeto > global > defaults**. Flags:
-`--voice-profile local`, `--voice-language pt`. Variáveis:
+Precedência: **flags CLI > env > projeto > global > default da instalação > tiny**.
+Flags: `--voice-model base`, `--voice-language pt`.
+A troca por `/voice model` vale para a sessão, acima da configuração carregada.
 
 | Variável | Efeito |
 | --- | --- |
-| `PI_VOICE_PROFILE` | Seleciona perfil já configurado |
-| `PI_VOICE_LANGUAGE` | Idioma ou `auto` |
-| `PI_VOICE_SHORTCUT` | F1–F12; registrada ao carregar; mudanças exigem `/reload` |
-| `PI_VOICE_FFMPEG` | Caminho confiável do executável FFmpeg; não aceita argumentos |
-| `PI_VOICE_SKIP_LOCAL_SETUP=1` | Adia download do modelo na instalação; reparo pelo menu |
-| Nome indicado em `apiKeyEnv` | Credencial do perfil, lida apenas ao fazer request |
+| `PI_VOICE_MODEL` | tiny, base ou small; também seleciona o download na instalação |
+| `PI_VOICE_LANGUAGE` | Idioma ou auto |
+| `PI_VOICE_SHORTCUT` | F1–F12; mudança exige /reload |
+| `PI_VOICE_FFMPEG` | Caminho do executável FFmpeg, sem argumentos |
+| `PI_VOICE_SKIP_LOCAL_SETUP=1` | Adia download; Ctrl+S no painel prepara depois |
 
-Ctrl+S salva configuração global atomicamente. Overrides de projeto/env/CLI
-continuam tendo prioridade. `/voice profile nome` é uma seleção explícita apenas
-na sessão, acima da escolha de perfil carregada. `remoteConsents` só é aceito no
-arquivo global; um repositório não pode conceder autorização externa.
+Versões 0.1/0.2: arquivos antigos são adaptados em memória para o modo local.
+Perfis HTTP, referências a chaves e consentimentos são descartados da configuração
+carregada. Ctrl+S grava o novo formato; arquivos não são reescritos ao abrir.
+Seleção externa antiga passa a tiny; preferências de microfone, idioma e atalho são mantidas.
+`PI_VOICE_PROFILE` e `/voice profile` foram substituídos por seleção de modelo.
 
-Defaults: gravação máxima 120s (teto 120), mínimo 350ms, timeout STT 120s,
-PCM16 mono 16kHz, 14 barras e 8 FPS (teto 10). `ui.noiseFloorDb` calibra o
-medidor; `capture.silenceRms` evita envio de silêncio. Áudio fica em arquivo
-temporário exclusivo, limitado a 3,84 MB de PCM, e é apagado em todos os desfechos.
-
-HTTP só é aceito em loopback. Para servidor LAN com HTTP, a configuração avançada
-exige `allowInsecureHttp: true` no perfil **e** confirmação de envio para esse
-endpoint. HTTPS remoto valida certificados; `NODE_TLS_REJECT_UNAUTHORIZED=0` é
-recusado. URLs com credenciais/query/fragmento e redirecionamentos são bloqueados.
-
-Antes de abrir o microfone, a extensão verifica a instalação local ou a conexão
-com o servidor. `STT_REFUSED` indica serviço ausente, `STT_DNS` resolução de nome
-e `STT_TLS` certificado inválido; autenticação e saldo têm mensagens próprias.
-Use **Testar conexão / motor** no menu. Nenhuma falha muda o provedor automaticamente.
-
-O cache `~/.pi/agent/cache/voice-control` guarda apenas os pesos/configurações do
-modelo. Áudio, transcrição e chaves não são guardados nele. Instalação em CI adia
-o download; inferência e testes reais do motor exigem preparo explícito.
+Máximo de gravação: 120 s, mínimo: 350 ms; PCM16 mono 16 kHz e timeout de 120 s.
+Áudio temporário limitado a 3,84 MB é removido após uso ou cancelamento.
+Áudio e transcrição não são persistidos no cache. O texto é colado no editor,
+sem execução como comando ou correção por LLM. Falhas preservam o editor.
 
 ## Interface e compatibilidade
 
@@ -164,22 +129,19 @@ Esses SOs têm testes de parser/argv; hardware real permanece validação condic
 ## Desenvolvimento e evidências
 
 ```powershell
-npm run lint
+npm ci
+pi -e .
 npm test
 npm run test:integration
-npm run benchmark
+npm run lint
 npm pack --dry-run
 ```
 
-`npm test` cobre FSM/corridas, configuração/schema, segurança, provider, processo,
-UI e o **Editor real do Pi**, incluindo cursor, Unicode, multiline e undo.
-Integração usa FFmpeg real com sinal sintético e STT HTTP loopback simulado.
-Teste de microfone real só é habilitado com `VOICE_MIC_TEST=1`; nunca envia áudio
-a STT. CI inclui Windows/Linux, Node 22/24, sem captura de hardware nem API paga.
+Para preparar manualmente o modelo: `npm run setup:local` (respeita `PI_VOICE_MODEL`).
+`npm test` cobre estados, concorrência, configuração/migração, escolha de modelos,
+download cancelado, processo supervisionado, TUI e Editor real do Pi.
+Integração usa FFmpeg com áudio sintético; microfone físico é opt-in `VOICE_MIC_TEST=1`.
+CI Windows/Linux, Node 22/24, adia modelos; não exige rede para os testes de unidade.
 
-**Aceite P0 ainda requer validação humana no Windows Terminal com voz e STT real.**
-Consulte [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) para evidências e roteiro;
-não confunda mocks/PTY automatizado com esse aceite manual. Arquitetura e limites
-de segurança: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-O contrato de UX desta versão está em [docs/EXTENSION_UX.md](docs/EXTENSION_UX.md).
+Detalhes: [arquitetura](docs/ARCHITECTURE.md), [UX](docs/EXTENSION_UX.md) e
+[evidências/aceite manual](docs/ACCEPTANCE.md).

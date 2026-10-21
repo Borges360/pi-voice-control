@@ -1,6 +1,4 @@
-import type { Profile } from '../security/endpoint-policy.js';
+import type { LocalModel } from '../local/models.mjs';
 import { LocalProvider } from './local.js';
-import { OpenAICompatibleProvider } from './openai-compatible.js';
 
-export const createProvider = (profile: Profile, consents: readonly string[]) => profile.type === 'local'
-  ? new LocalProvider(profile) : new OpenAICompatibleProvider(profile, consents);
+export const createProvider = (model: LocalModel) => new LocalProvider(model);

@@ -10,3 +10,12 @@ dist/
 .harness/observations.jsonl
 .pi/voice-control.json
 .acceptance-local/
+# Downloaded model weights belong only in the user's cache, never in Git.
+*.onnx
+*.onnx_data
+*.safetensors
+*.gguf
+*.ggml
+pytorch_model*.bin
+models/
+.cache/

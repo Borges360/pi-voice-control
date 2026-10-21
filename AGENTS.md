@@ -11,7 +11,9 @@ somente em processo filho; nunca importar Transformers.js no host do Pi.
 Gitflow: main/develop, codex/* ou feature/* a partir de develop. Publicação,
 push e merge em main dependem de pedido explícito. Comandos: npm ci,
 npm run lint, npm test, npm run build, npm run test:integration, npm run benchmark.
-Integração com microfone exige VOICE_MIC_TEST=1; não enviar áudio remoto nos testes.
+Whisper somente local: tiny/base/small, com revisões fixas e pesos no cache do usuário.
+Não adicionar providers externos; nunca versionar pesos.
+Integração com microfone exige VOICE_MIC_TEST=1.
 Não declarar validação manual do Windows Terminal sem evidência humana real.
 
 Inventário e escopo de memória: workspace/harness.yaml, homelab/pi-voice-control.

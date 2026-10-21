@@ -1,13 +1,9 @@
 {
   "shortcut": "f8",
   "language": "pt",
-  "capture": { "backend": "ffmpeg", "deviceId": "default", "sampleRate": 16000, "channels": 1, "maxSeconds": 120 },
-  "ui": { "placement": "auto", "fps": 8, "bars": 14, "waveform": true, "showDuration": true },
   "transcription": {
-    "profile": "builtin", "timeoutMs": 120000, "autoSubmit": false, "cloudFallback": false,
-    "profiles": {
-      "builtin": { "type": "local", "model": "onnx-community/whisper-tiny" }
-    }
-  },
-  "privacy": { "retainAudio": false, "retainTranscripts": false, "telemetry": false }
+    "model": "tiny",
+    "timeoutMs": 120000,
+    "autoSubmit": false
+  }
 }

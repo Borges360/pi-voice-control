@@ -16,16 +16,15 @@ código de `pasteToEditor`, widgets e teardown de `/reload`.
 - `audio/audio-meter.ts`: RMS em janelas de 320 amostras (20ms), sem armazenar
   áudio em RAM; UI usa buffer fixo 14–20 valores, ganho visual para fala baixa,
   escala até -18 dBFS e ataque 0,90/decaimento 0,65 para acompanhar sílabas.
-- `providers/transcription.ts`: contrato independente do motor STT; factory para
-  local incluído, OpenRouter JSON/base64 ou HTTP multipart e catálogo opcional.
-- `local/`: processo Node descartável com Transformers.js/ONNX CPU e Whisper tiny.
+- `providers/transcription.ts`: contrato independente do motor STT; factory somente local, com escolha
+  entre Whisper tiny, base e small.
+- `local/`: processo Node descartável com Transformers.js/ONNX CPU e Whisper tiny/base/small.
   Biblioteca ML só é importada no processo filho. IPC transmite um resultado;
   stdout/stderr são ignorados e não herda credenciais, NODE_OPTIONS ou flags Pi.
   Modelo/revisão fixos; download apenas na instalação/reparo. Inferência carrega
   os arquivos do cache e bloqueia fetch. Encerramento espera close do processo.
-- `config/`: merge estrito/validação, default builtin sem servidor, env/CLI e save atômico.
-- `security/`: política de endpoint, consentimento SHA-256 dos campos autorizados,
-  sanitização de controles de terminal, sem correção semântica.
+- `config/`: merge estrito/validação, modelo tiny/base/small, migração legada, env/CLI e save atômico.
+- `security/`: sanitização de controles de terminal, sem correção semântica.
 - `ui/`: widget/status na chave `pi-voice-control`, painel transacional Ctrl+S e diagnóstico.
 
 O painel genérico em `settings-panel.ts` usa somente APIs Pi e recebe callbacks
@@ -39,8 +38,7 @@ Erro: `ERROR → IDLE`. Cancelamento: `CANCELLED → IDLE` depois da limpeza.
 Nenhum resultado de geração inválida pode inserir ou limpar UI da próxima sessão.
 `stop()` é idempotente; flags de inserção são marcadas antes do paste.
 Nenhum callback externo é interpretado como código ou comando de shell.
-Antes do microfone, `prepare` verifica instalação local ou catálogo HTTP e
-credencial. Cancelamento durante essa fase invalida a abertura tardia da captura.
+Antes do microfone, `prepare` verifica o marcador da revisão do modelo local selecionado. Cancelamento durante essa fase invalida a abertura tardia da captura.
 
 O controller inicia um timer de duração apenas em RECORDING. O widget tem seu
 próprio timer de no máximo 10Hz somente em RECORDING. O backend também limita a
@@ -73,28 +71,22 @@ O VT legado não contém key-up; o fallback temporal é uma limitação explíci
 ## Confiança, rede e dados
 
 Áudio só é produzido em start por input humano/comando, ou teste confirmado do
-wizard. O adapter exige autorização antes de abrir microfone/POST externo.
-Catálogo autenticado externo também exige autorização, para evitar que um
-override de projeto redirecione credenciais para outro host através de doctor.
+painel. Não existe caminho de upload ou solicitação de chave.
 
-Consentimento é global, por endpoint/modelo/env/política HTTP, e nunca herdado de
-um projeto. Variáveis de chave são consultadas no request; valores nunca entram
-em JSON, erros ou notificações. Corpo de erro e stderr FFmpeg não são mostrados.
-O nome do modelo/idioma/microfone podem aparecer em status; áudio e transcrição
-não são registrados nem persistidos. Texto fica apenas no editor que o usuário
-decidiu preencher. A chave de consentimento é um registro de escolha, não uma
-assinatura de segurança contra alguém com controle da conta do SO.
+Transcrição exclusivamente local. Não há adapter HTTP, API externa, credencial,
+consentimento remoto ou resolução de endpoint. `local/models.mjs` permite apenas
+três repositórios/revisões fixos: tiny, base, small. Configuração usa nomes curtos.
+A inferência desativa downloads e bloqueia fetch. Instalação/reparo, sem captura de
+áudio, pode baixar somente o modelo escolhido do Hugging Face. Pesos nunca são
+incluídos no Git nem no pacote; ficam no cache do usuário. Cada modelo/revisão tem
+seu próprio marcador de preparo. Arquivos parciais não tornam o modelo pronto.
+O marcador tiny antigo continua válido. Ctrl+S garante o preparo antes do save
+atômico; abort/falha de download não altera a seleção salva.
 
-Sem seguir redirect, retries, headers arbitrários ou fallback. Redirect HTTP é
-recebido manualmente para diagnóstico e nunca seguido. Resposta limitada a
-256 KiB; texto limitado a 100.000 caracteres. Upload WAV limitado a 3.840.044
-bytes (até 120s); buffer multipart é limitado pelo mesmo teto. JSON de configuração
-limitado a 128 KiB; unknown fields, prototype pollution e opções fora do P0 são
-recusados. Serviços que precisem query de autenticação, formato não JSON ou outras
-rotas precisam de adapter futuro, não de um bypass automático.
+Configurações 0.1/0.2 são migradas em memória: seleção local reconhecida é
+preservada; seleção externa passa a tiny. Perfis/consentimentos antigos são
+removidos do valor efetivo e não chegam ao provider. O arquivo só muda no save.
 
-Loopback é a fronteira local do MVP. Não há proxy de microfone nem resolução DNS
-customizada para prometer isolamento adicional contra um SO/DNS comprometido.
 Processo terminado à força pode deixar arquivo até o TTL; não há promessa de
 apagamento forense. No Windows, ACL segue o diretório temporário da conta.
 
@@ -104,8 +96,7 @@ Código próprio sob MIT; nenhuma implementação de extensão de terceiros foi
 copiada. Referências de produto constam em `pi-voice-control-spec.md`.
 API oficial: [extensões Pi](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md),
 [keybindings](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/keybindings.md),
-[Kitty](https://sw.kovidgoyal.net/kitty/keyboard-protocol/),
-[Speaches STT](https://speaches.ai/usage/speech-to-text/).
+[Kitty](https://sw.kovidgoyal.net/kitty/keyboard-protocol/).
 O nome histórico `@mariozechner/pi-coding-agent` da especificação foi substituído
 pelo pacote atual usado pelo host e pelos projetos locais: `@earendil-works/*`.
 A faixa peer é estreita (1.3.x); ampliar requer repetir os testes de integração.

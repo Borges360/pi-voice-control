@@ -1,5 +1,5 @@
 import type { VoiceConfig } from '../config/validate.js';
-import { requireConsent } from '../security/endpoint-policy.js';
+import { validateConfig } from '../config/validate.js';
 import { sanitizeTranscript } from '../security/transcript.js';
 import { VoiceError, userError, type AudioCapture, type CaptureSession, type RecordedAudio, type TranscriptionProvider, type VoiceState } from './types.js';
 
@@ -24,16 +24,16 @@ export class VoiceController {
   get busy() { return !!this.active; }
   private current(op: Operation) { return this.active === op && !op.invalid && op.id === this.generation && !this.disposed; }
   private change(state: VoiceState) { this.state = state; this.view = { ...this.view, state }; this.hooks.update({ ...this.view }); }
-  async start(config: VoiceConfig, consents: readonly string[]): Promise<void> {
+  async start(config: VoiceConfig): Promise<void> {
     if (this.disposed) return;
     if (this.active) { this.hooks.notify('Voz já está ocupada; /voice cancel para cancelar.', 'warning'); return; }
     const op: Operation = { id: ++this.generation, abort: new AbortController(), config: structuredClone(config), invalid: false, inserted: false };
     this.active = op; this.view = { state: 'IDLE', startedAt: 0, rms: 0 }; this.change('STARTING');
-    op.starting = this.begin(op, consents); await op.starting;
+    op.starting = this.begin(op); await op.starting;
   }
-  private async begin(op: Operation, consents: readonly string[]): Promise<void> {
+  private async begin(op: Operation): Promise<void> {
     try {
-      requireConsent(op.config.transcription.profiles[op.config.transcription.profile]!, consents);
+      validateConfig(op.config);
       const provider = this.provider(op.config);
       if (provider.prepare) {
         await provider.prepare(op.abort.signal);
@@ -77,7 +77,7 @@ export class VoiceController {
       if (audio.peakRms < op.config.capture.silenceRms) { this.hooks.notify('Nenhuma fala detectada.'); this.change('SUCCESS'); return; }
       this.change('TRANSCRIBING');
       const { text } = await this.provider(op.config).transcribe(audio, {
-        model: op.config.transcription.profiles[op.config.transcription.profile]!.model,
+        model: op.config.transcription.model,
         language: op.config.language, timeoutMs: op.config.transcription.timeoutMs, signal: op.abort.signal,
       });
       if (!this.current(op) || op.inserted) return;

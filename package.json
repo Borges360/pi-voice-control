@@ -1,7 +1,7 @@
 {
   "name": "@borges360/pi-voice-control",
-  "version": "0.2.0",
-  "description": "Native Pi dictation with supervised FFmpeg capture and private, pluggable STT",
+  "version": "0.3.0",
+  "description": "Native Pi dictation with FFmpeg and offline Whisper tiny, base or small",
   "type": "module",
   "license": "MIT",
   "engines": {
@@ -38,10 +38,17 @@
     "LICENSE",
     "docs",
     "scripts/setup-local.mjs",
-    "pi-voice-control-spec.md"
+    "pi-voice-control-spec.md",
+    "scripts/build.mjs",
+    "!**/*.onnx",
+    "!**/*.onnx_data",
+    "!**/*.safetensors",
+    "!**/*.gguf",
+    "!**/*.ggml",
+    "!**/pytorch_model*.bin"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node scripts/build.mjs",
     "lint": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test tests/*.test.mjs",
     "test:integration": "npm run build && node --test tests/integration/*.test.mjs",

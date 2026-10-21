@@ -2,65 +2,138 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/Borges360/pi-voice-control/schemas/voice-control.schema.json",
   "title": "Pi Voice Control configuration overrides",
-  "description": "Partial overrides. Effective configuration is validated after merging defaults/global/project/env/CLI. remoteConsents is accepted only in the global file.",
+  "description": "Partial local-only overrides, validated after merging defaults/global/project/env/CLI.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "shortcut": { "type": "string", "pattern": "^f(?:[1-9]|1[0-2])$", "default": "f8" },
-    "language": { "type": "string", "pattern": "^(?:auto|[a-z]{2,3}(?:-[A-Za-z]{2,4})?)$", "default": "pt" },
-    "debounceMs": { "type": "integer", "minimum": 100, "maximum": 1000, "default": 250 },
+    "shortcut": {
+      "type": "string",
+      "pattern": "^f(?:[1-9]|1[0-2])$",
+      "default": "f8"
+    },
+    "language": {
+      "type": "string",
+      "pattern": "^(?:auto|[a-z]{2,3}(?:-[A-Za-z]{2,4})?)$",
+      "default": "pt"
+    },
+    "debounceMs": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 1000,
+      "default": 250
+    },
     "capture": {
-      "type": "object", "additionalProperties": false,
+      "type": "object",
+      "additionalProperties": false,
       "properties": {
-        "backend": { "const": "ffmpeg" }, "deviceId": { "type": "string", "minLength": 1, "maxLength": 512 },
-        "sampleRate": { "const": 16000 }, "channels": { "const": 1 },
-        "maxSeconds": { "type": "integer", "minimum": 1, "maximum": 120, "default": 120 },
-        "minMs": { "type": "integer", "minimum": 100, "maximum": 1000, "default": 350 },
-        "silenceRms": { "type": "number", "minimum": 0.0001, "maximum": 0.1, "default": 0.002 }
+        "backend": {
+          "const": "ffmpeg"
+        },
+        "deviceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "sampleRate": {
+          "const": 16000
+        },
+        "channels": {
+          "const": 1
+        },
+        "maxSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120,
+          "default": 120
+        },
+        "minMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 1000,
+          "default": 350
+        },
+        "silenceRms": {
+          "type": "number",
+          "minimum": 0.0001,
+          "maximum": 0.1,
+          "default": 0.002
+        }
       }
     },
     "ui": {
-      "type": "object", "additionalProperties": false,
+      "type": "object",
+      "additionalProperties": false,
       "properties": {
-        "placement": { "enum": ["auto", "belowEditor", "status"] },
-        "waveform": { "type": "boolean" }, "showDuration": { "type": "boolean" },
-        "bars": { "type": "integer", "minimum": 14, "maximum": 20, "default": 14 },
-        "fps": { "type": "integer", "minimum": 1, "maximum": 10, "default": 8 },
-        "noiseFloorDb": { "type": "number", "minimum": -90, "maximum": -10, "default": -60 }
+        "placement": {
+          "enum": [
+            "auto",
+            "belowEditor",
+            "status"
+          ]
+        },
+        "waveform": {
+          "type": "boolean"
+        },
+        "showDuration": {
+          "type": "boolean"
+        },
+        "bars": {
+          "type": "integer",
+          "minimum": 14,
+          "maximum": 20,
+          "default": 14
+        },
+        "fps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 8
+        },
+        "noiseFloorDb": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": -10,
+          "default": -60
+        }
       }
     },
     "transcription": {
-      "type": "object", "additionalProperties": false,
+      "type": "object",
+      "additionalProperties": false,
       "properties": {
-        "profile": { "type": "string", "minLength": 1, "maxLength": 80 },
-        "timeoutMs": { "type": "integer", "minimum": 1000, "maximum": 120000, "default": 120000 },
-        "autoSubmit": { "const": false }, "cloudFallback": { "const": false },
-        "profiles": {
-          "type": "object", "maxProperties": 32,
-          "propertyNames": { "pattern": "^[a-zA-Z0-9_-]{1,80}$" },
-          "additionalProperties": {
-            "type": "object", "additionalProperties": false,
-            "properties": {
-              "type": { "enum": ["local", "openai-compatible", "openrouter"] },
-              "endpoint": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^https?://[^?#]+/audio/transcriptions$" },
-              "model": { "type": "string", "minLength": 1, "maxLength": 256 },
-              "apiKeyEnv": { "type": "string", "pattern": "^[A-Z_][A-Z0-9_]{0,127}$" },
-              "allowInsecureHttp": { "type": "boolean", "default": false }
-            },
-            "allOf": [{ "if": { "properties": { "type": { "const": "local" } }, "required": ["type"] },
-              "then": { "properties": { "model": { "const": "onnx-community/whisper-tiny" } }, "not": { "anyOf": [{ "required": ["endpoint"] }, { "required": ["apiKeyEnv"] }, { "required": ["allowInsecureHttp"] }] } } }]
-          }
+        "model": {
+          "enum": [
+            "tiny",
+            "base",
+            "small"
+          ],
+          "default": "tiny"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 120000,
+          "default": 120000
+        },
+        "autoSubmit": {
+          "const": false
         }
       }
     },
     "privacy": {
-      "type": "object", "additionalProperties": false,
-      "properties": { "retainAudio": { "const": false }, "retainTranscripts": { "const": false }, "telemetry": { "const": false } }
-    },
-    "remoteConsents": {
-      "description": "Global file only. Written after explicit UI consent, bound to endpoint/model/key-env/HTTP policy.",
-      "type": "array", "maxItems": 128, "uniqueItems": true,
-      "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "retainAudio": {
+          "const": false
+        },
+        "retainTranscripts": {
+          "const": false
+        },
+        "telemetry": {
+          "const": false
+        }
+      }
     }
   }
 }
