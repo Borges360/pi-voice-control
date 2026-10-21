@@ -25,7 +25,7 @@ test('interactive wiring: F8 start/stop, focus, modal, reload teardown, existing
   const api={ registerFlag:(k,v)=>flags.set(k,v),getFlag:()=>undefined,registerShortcut:(k,v)=>shortcuts.set(k,v),registerCommand:(k,v)=>commands.set(k,v),on:(k,h)=>handlers.set(k,h) };
   const ui={ notify:m=>notices.push(m),setWidget(){},setStatus(){},onTerminalInput:h=>{ input=h; return()=>++unsub; },pasteToEditor(){ throw new Error('Must not paste'); } };
   try {
-    process.chdir(root); await mkdir(resolve(root,'.pi')); await writeFile(resolve(root,'.pi/voice-control.json'),JSON.stringify({ shortcut:'f9',capture:{ deviceId:'test mic' },transcription:{profile:'local'} }));
+    process.chdir(root); await mkdir(resolve(root,'.pi')); await writeFile(resolve(root,'.pi/voice-control.json'),JSON.stringify({ shortcut:'f9',capture:{ deviceId:'test mic' },transcription:{model:'tiny'} }));
     globalThis.fetch=async()=>Response.json({data:[]});
     process.env.PI_VOICE_FFMPEG='missing-ffmpeg-for-extension-test';
     Object.defineProperty(process.stdin,'isTTY',{ configurable:true,value:true }); Object.defineProperty(process.stdout,'isTTY',{ configurable:true,value:true }); process.stdout.write=function(data,...args) { return String(data).includes('\x1b[?1004')?true:stdoutWrite.call(this,data,...args); };

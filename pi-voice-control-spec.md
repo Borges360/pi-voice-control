@@ -1,5 +1,18 @@
 # pi-voice-control — Especificação de Produto e Engenharia
 
+## Emenda de produto — 0.3 (2026-10-21)
+
+Por solicitação do usuário, a extensão passa a ser exclusivamente local.
+Remover APIs externas, OpenRouter, servidores HTTP, perfis, endpoints e credenciais.
+Oferecer apenas Whisper tiny, base e small, quantizados para CPU, no painel nativo.
+Pesos não podem estar no Git nem no pacote: download durante a instalação para o
+cache do usuário, apenas do modelo escolhido (tiny por padrão; PI_VOICE_MODEL
+permite base/small). Ctrl+S no painel baixa o modelo se necessário antes de salvar.
+Falha/cancelamento preserva a escolha anterior. Reutilizar o cache em atualizações.
+Essa emenda substitui RF-04, seleção de provedor/endpoint e aceite local/remoto
+nos contratos anteriores. Documentos abaixo ficam como registro histórico;
+README, schema e esta emenda descrevem o produto atual.
+
 ## Emenda de produto — 0.2 (2026-10-20)
 
 Por solicitação do usuário, o comando raiz abre painel interativo com rascunho,

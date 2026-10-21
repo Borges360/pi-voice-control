@@ -5,14 +5,21 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runLocal } from '../src/local/process.mjs';
 import { createProvider } from '../dist/src/providers/factory.js';
-import { requireConsent } from '../dist/src/security/endpoint-policy.js';
+import { LOCAL_MODELS, modelInfo } from '../src/local/models.mjs';
+import { readyMarker } from '../src/local/process.mjs';
 
 test('built-in provider uses separate process; missing install is actionable, no network needed',async () => {
   const dir = await mkdtemp(join(tmpdir(),'voice-model-missing-'));
   try {
     await assert.rejects(runLocal({task:'probe'}, {signal:new AbortController().signal,cacheDir:dir}), e => e.code === 'LOCAL_NOT_READY');
-    const profile = {type:'local',model:'onnx-community/whisper-tiny'};
-    assert.equal(createProvider(profile,[]).id,'local'); requireConsent(profile,[]);
+    for (const model of ['tiny','base','small']) {
+      assert.equal(createProvider(model).id,'local');
+      await assert.rejects(runLocal({task:'probe',model}, {signal:new AbortController().signal,cacheDir:dir}), e => e.code === 'LOCAL_NOT_READY');
+      assert.match(modelInfo(model).revision,/^[0-9a-f]{40}$/);
+    }
+    assert.equal(new Set(Object.keys(LOCAL_MODELS).map(m=>readyMarker(m,dir))).size,3);
+    assert.throws(()=>createProvider('openrouter'));
+    await assert.rejects(runLocal({task:'probe',model:'../escape'}, {signal:new AbortController().signal,cacheDir:dir}), e=>e.code==='LOCAL_MODEL');
   } finally { await rm(dir,{recursive:true,force:true}); }
 });
 test('cancelled worker never starts, timeout and running cancellation reap process',async () => {

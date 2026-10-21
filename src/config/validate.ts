@@ -1,21 +1,18 @@
-import { endpointPolicy, type Profile } from '../security/endpoint-policy.js';
+import { isLocalModel, type LocalModel } from '../local/models.mjs';
 import { VoiceError } from '../core/types.js';
 
 export interface VoiceConfig {
   shortcut: string; language: string; debounceMs: number;
   capture: { backend: 'ffmpeg'; deviceId: string; sampleRate: 16000; channels: 1; maxSeconds: number; minMs: number; silenceRms: number };
   ui: { placement: 'auto' | 'belowEditor' | 'status'; waveform: boolean; bars: number; fps: number; showDuration: boolean; noiseFloorDb: number };
-  transcription: { profile: string; timeoutMs: number; autoSubmit: false; cloudFallback: false; profiles: Record<string, Profile> };
+  transcription: { model: LocalModel; timeoutMs: number; autoSubmit: false };
   privacy: { retainAudio: false; retainTranscripts: false; telemetry: false };
 }
 export const defaults: VoiceConfig = {
   shortcut: 'f8', language: 'pt', debounceMs: 250,
   capture: { backend: 'ffmpeg', deviceId: 'default', sampleRate: 16000, channels: 1, maxSeconds: 120, minMs: 350, silenceRms: 0.002 },
   ui: { placement: 'auto', waveform: true, bars: 14, fps: 8, showDuration: true, noiseFloorDb: -60 },
-  transcription: { profile: 'builtin', timeoutMs: 120_000, autoSubmit: false, cloudFallback: false, profiles: {
-    builtin: { type: 'local', model: 'onnx-community/whisper-tiny' },
-    local: { type: 'openai-compatible', endpoint: 'http://127.0.0.1:8000/v1/audio/transcriptions', model: 'Systran/faster-whisper-small' },
-  } },
+  transcription: { model: 'tiny', timeoutMs: 120_000, autoSubmit: false },
   privacy: { retainAudio: false, retainTranscripts: false, telemetry: false },
 };
 const bad = (key: string): never => { throw new VoiceError('CONFIG', `Configuração inválida: ${key}.`); };
@@ -46,26 +43,10 @@ export function validateConfig(value: unknown): VoiceConfig {
   if (!['auto', 'belowEditor', 'status'].includes(String(u.placement)) || typeof u.waveform !== 'boolean' || typeof u.showDuration !== 'boolean') bad('ui');
   number(u.bars, 'ui.bars', 14, 20, true); number(u.fps, 'ui.fps', 1, 10, true); number(u.noiseFloorDb, 'ui.noiseFloorDb', -90, -10);
   const t = object(c.transcription, 'transcription');
-  keys(t, ['profile', 'timeoutMs', 'autoSubmit', 'cloudFallback', 'profiles'], 'transcription');
-  if (t.autoSubmit !== false || t.cloudFallback !== false) bad('transcription.privacy');
-  string(t.profile, 'transcription.profile', 80); number(t.timeoutMs, 'transcription.timeoutMs', 1000, 120000, true);
-  const profiles = object(t.profiles, 'profiles');
-  if (Object.keys(profiles).length > 32 || !Object.hasOwn(profiles, t.profile as string)) bad('profiles');
-  for (const [id, raw] of Object.entries(profiles)) {
-    if (!/^[a-zA-Z0-9_-]{1,80}$/.test(id)) bad('profile.id');
-    const p = object(raw, 'profile');
-    if (p.type === 'local') {
-      keys(p, ['type', 'model'], 'profile');
-      if (p.model !== 'onnx-community/whisper-tiny') bad('profile.model');
-      continue;
-    }
-    keys(p, ['type', 'endpoint', 'model', 'apiKeyEnv', 'allowInsecureHttp'], 'profile');
-    if (p.type !== 'openai-compatible' && p.type !== 'openrouter') bad('profile.type');
-    string(p.endpoint, 'profile.endpoint', 2048); string(p.model, 'profile.model', 256);
-    if (p.apiKeyEnv !== undefined && (typeof p.apiKeyEnv !== 'string' || !/^[A-Z_][A-Z0-9_]{0,127}$/.test(p.apiKeyEnv))) bad('profile.apiKeyEnv');
-    if (p.allowInsecureHttp !== undefined && typeof p.allowInsecureHttp !== 'boolean') bad('profile.allowInsecureHttp');
-    endpointPolicy(p as unknown as Profile);
-  }
+  keys(t, ['model', 'timeoutMs', 'autoSubmit'], 'transcription');
+  if (t.autoSubmit !== false) bad('transcription.autoSubmit');
+  if (!isLocalModel(t.model)) bad('transcription.model (tiny, base ou small)');
+  number(t.timeoutMs, 'transcription.timeoutMs', 1000, 120000, true);
   const p = object(c.privacy, 'privacy'); keys(p, ['retainAudio', 'retainTranscripts', 'telemetry'], 'privacy');
   if (p.retainAudio !== false || p.retainTranscripts !== false || p.telemetry !== false) bad('privacy');
   return structuredClone(c) as unknown as VoiceConfig;
