@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { loadExtensions } from '../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js';
 import { ExtensionRunner } from '../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/runner.js';
 import voiceControl from '../dist/index.js';
+import { readyMarker, localCache } from '../src/local/process.mjs';
 test('official Pi 1.3 loader loads source TypeScript with real extension API',async()=>{
   const loaded=await loadExtensions([resolve('index.ts')],process.cwd());
   assert.deepEqual(loaded.errors,[]); assert.equal(loaded.extensions.length,1);
@@ -20,12 +21,19 @@ test('interactive wiring: F8 start/stop, focus, modal, reload teardown, existing
   const root=await mkdtemp(resolve(tmpdir(),'voice-extension-test-')); const originalCwd=process.cwd();
   const descriptors=[process.stdin,process.stdout].map(s=>Object.getOwnPropertyDescriptor(s,'isTTY')); const stdoutWrite=process.stdout.write;
   const envFfmpeg=process.env.PI_VOICE_FFMPEG;
+  const envHome=process.env.HOME, envUserProfile=process.env.USERPROFILE;
   const originalFetch=globalThis.fetch;
   const commands=new Map(),shortcuts=new Map(),handlers=new Map(),flags=new Map(),notices=[]; let input,unsub=0;
   const api={ registerFlag:(k,v)=>flags.set(k,v),getFlag:()=>undefined,registerShortcut:(k,v)=>shortcuts.set(k,v),registerCommand:(k,v)=>commands.set(k,v),on:(k,h)=>handlers.set(k,h) };
   const ui={ notify:m=>notices.push(m),setWidget(){},setStatus(){},onTerminalInput:h=>{ input=h; return()=>++unsub; },pasteToEditor(){ throw new Error('Must not paste'); } };
   try {
-    process.chdir(root); await mkdir(resolve(root,'.pi')); await writeFile(resolve(root,'.pi/voice-control.json'),JSON.stringify({ shortcut:'f9',capture:{ deviceId:'test mic' },transcription:{model:'tiny'} }));
+    // This is a wiring test, not inference. Isolate readiness from the real user's
+    // model cache so a clean CI runner can exercise the FFmpeg failure path too.
+    process.env.HOME=root; process.env.USERPROFILE=root;
+    assert.equal(localCache(),resolve(root,'.pi','agent','cache','voice-control'));
+    await mkdir(localCache(),{recursive:true});
+    await writeFile(readyMarker('tiny'),'{}');
+    process.chdir(root); await mkdir(resolve(root,'.pi'),{recursive:true}); await writeFile(resolve(root,'.pi/voice-control.json'),JSON.stringify({ shortcut:'f9',capture:{ deviceId:'test mic' },transcription:{model:'tiny'} }));
     globalThis.fetch=async()=>Response.json({data:[]});
     process.env.PI_VOICE_FFMPEG='missing-ffmpeg-for-extension-test';
     Object.defineProperty(process.stdin,'isTTY',{ configurable:true,value:true }); Object.defineProperty(process.stdout,'isTTY',{ configurable:true,value:true }); process.stdout.write=function(data,...args) { return String(data).includes('\x1b[?1004')?true:stdoutWrite.call(this,data,...args); };
@@ -43,6 +51,8 @@ test('interactive wiring: F8 start/stop, focus, modal, reload teardown, existing
     globalThis.fetch=originalFetch;
     for(const [i,stream] of [process.stdin,process.stdout].entries()) { if(descriptors[i]) Object.defineProperty(stream,'isTTY',descriptors[i]); else delete stream.isTTY; }
     if(envFfmpeg===undefined) delete process.env.PI_VOICE_FFMPEG; else process.env.PI_VOICE_FFMPEG=envFfmpeg;
+    if(envHome===undefined) delete process.env.HOME; else process.env.HOME=envHome;
+    if(envUserProfile===undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE=envUserProfile;
     await rm(root,{ recursive:true,force:true });
   }
 });
