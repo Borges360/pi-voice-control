@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { matchesKey, isKeyRepeat, isKeyRelease, type KeyId } from '@earendil-works/pi-tui';
 import { loadConfig, type LoadedConfig } from './src/config/load.js';
+import { isLocalModel, type LocalModel } from './src/local/models.mjs';
 import { defaults } from './src/config/validate.js';
 import { FFmpegRecorder } from './src/audio/ffmpeg-recorder.js';
 import { cleanupOrphans } from './src/audio/wav-writer.js';
@@ -13,12 +14,12 @@ import { settings } from './src/ui/settings.js';
 import { doctor } from './src/ui/doctor.js';
 
 export default function voiceControl(pi: ExtensionAPI): void {
-  for (const [flag, description] of [['voice-profile', 'Perfil STT (sem fallback)'], ['voice-language', 'Idioma do ditado']] as const) {
+  for (const [flag, description] of [['voice-model', 'Whisper local: tiny, base ou small'], ['voice-language', 'Idioma do ditado']] as const) {
     pi.registerFlag(flag, { type: 'string', description });
   }
   const flags = () => {
     const result: Record<string, unknown> = {};
-    const profile = pi.getFlag('voice-profile'); if (typeof profile === 'string' && profile) result.transcription = { profile };
+    const model = pi.getFlag('voice-model'); if (typeof model === 'string' && model) result.transcription = { model };
     const language = pi.getFlag('voice-language'); if (typeof language === 'string' && language) result.language = language;
     return result;
   };
@@ -32,13 +33,10 @@ export default function voiceControl(pi: ExtensionAPI): void {
   let setupAbort: AbortController | undefined;
   let setupTask: Promise<unknown> | undefined;
   let modalDepth = 0; let permittedAt = -Infinity; let initialized = false;
-  let profileOverride: string | undefined;
+  let modelOverride: LocalModel | undefined;
   const refresh = (ctx: ExtensionContext) => {
     const loaded = loadConfig(ctx.cwd, process.env, flags());
-    if (profileOverride) {
-      if (!Object.hasOwn(loaded.config.transcription.profiles, profileOverride)) profileOverride = undefined;
-      else loaded.config.transcription.profile = profileOverride;
-    }
+    if (modelOverride) loaded.config.transcription.model = modelOverride;
     return loaded;
   };
   const get = (ctx: ExtensionContext) => {
@@ -47,9 +45,10 @@ export default function voiceControl(pi: ExtensionAPI): void {
     const loaded = refresh(ctx); const recorder = new FFmpegRecorder(loaded.ffmpegPath);
     let controller!: VoiceController;
     const indicator = new VoiceIndicator(ctx.ui, loaded.config.ui, () => controller.snapshot());
-    controller = new VoiceController(recorder, c => createProvider(c.transcription.profiles[c.transcription.profile]!, refresh(ctx).consents), {
+    controller = new VoiceController(recorder, c => createProvider(c.transcription.model), {
       update: v => indicator.update(v), paste: text => ctx.ui.pasteToEditor(text), notify: (message, kind) => ctx.ui.notify(message, kind),
     });
+    if (loaded.migrated) ctx.ui.notify('Voz agora usa somente Whisper local. Configuração antiga adaptada; Ctrl+S em /voice salva o novo formato.', 'info');
     runtime = { ctx, loaded, recorder, controller, indicator }; gate = new InputGate(loaded.config.debounceMs);
     unsubscribe = ctx.ui.onTerminalInput(data => {
       if (data === '\x1b[I' || data === '\x1b[O') { gate.focus(data === '\x1b[I'); return { consume: true }; }
@@ -71,38 +70,38 @@ export default function voiceControl(pi: ExtensionAPI): void {
     if (performance.now() - permittedAt > 100) return;
     permittedAt = -Infinity;
     if (r.controller.state === 'RECORDING') await r.controller.stop();
-    else if (!r.controller.busy) { const l = refresh(ctx); await r.controller.start(l.config, l.consents); }
+    else if (!r.controller.busy) { const l = refresh(ctx); await r.controller.start(l.config); }
     else ctx.ui.notify('Voz ocupada; /voice cancel para cancelar.', 'warning');
   }) });
-  pi.registerCommand('voice', { description: 'Abrir menu de voz (Ctrl+S salva); start, stop, cancel, status, settings, doctor, profile', handler: (args, ctx) => protect(ctx, async () => {
+  pi.registerCommand('voice', { description: 'Abrir menu de voz (Ctrl+S salva); start, stop, cancel, status, settings, doctor, model', handler: (args, ctx) => protect(ctx, async () => {
     const [command = '', ...rest] = args.trim().split(/\s+/);
     const r = get(ctx); if (!r) return;
     if (command === 'cancel') { setupAbort?.abort(); await r.controller.cancel(); return; }
     if (setupAbort) { ctx.ui.notify('Configuração/diagnóstico em andamento.', 'warning'); return; }
-    if (command === 'start') { if (!gate.focused) { ctx.ui.notify('Terminal sem foco.', 'warning'); return; } const l = refresh(ctx); await r.controller.start(l.config, l.consents); }
+    if (command === 'start') { if (!gate.focused) { ctx.ui.notify('Terminal sem foco.', 'warning'); return; } const l = refresh(ctx); await r.controller.start(l.config); }
     else if (command === 'stop') await r.controller.stop();
     else if (command === 'status') {
-      const l = refresh(ctx); const c = l.config; const p = c.transcription.profiles[c.transcription.profile]!;
-      ctx.ui.notify(`Voz: ${r.controller.state} | microfone: ${c.capture.deviceId} | perfil: ${c.transcription.profile} | modelo: ${p.model} | idioma: ${c.language} | atalho: ${shortcut}${shortcut !== c.shortcut ? ' (/reload pendente)' : ''}`);
-    } else if (command === 'profile') {
-      const l = refresh(ctx); const name = rest.join(' ');
-      if (!name) ctx.ui.notify(`Perfis: ${Object.keys(l.config.transcription.profiles).join(', ')}; ativo: ${l.config.transcription.profile}.`);
-      else if (!Object.hasOwn(l.config.transcription.profiles, name)) ctx.ui.notify('Perfil desconhecido.', 'warning');
-      else { profileOverride = name; ctx.ui.notify(`Perfil ${name} selecionado para próxima gravação; autorização externa será verificada antes de capturar.`); }
+      const l = refresh(ctx); const c = l.config;
+      ctx.ui.notify(`Voz: ${r.controller.state} | microfone: ${c.capture.deviceId} | modelo local: ${c.transcription.model} | idioma: ${c.language} | atalho: ${shortcut}${shortcut !== c.shortcut ? ' (/reload pendente)' : ''}`);
+    } else if (command === 'model') {
+      const name = rest.join(' ');
+      if (!name) ctx.ui.notify(`Modelos locais: tiny, base, small; ativo: ${refresh(ctx).config.transcription.model}. Use /voice para baixar e salvar.`);
+      else if (!isLocalModel(name)) ctx.ui.notify('Escolha tiny, base ou small.', 'warning');
+      else { modelOverride = name; ctx.ui.notify(`Whisper ${name} selecionado para a sessão. Se necessário, abra /voice e prepare o modelo.`); }
     } else if (command === '' || command === 'settings' || command === 'doctor') {
       if (r.controller.busy && command === 'doctor') { ctx.ui.notify('Encerre ou cancele a gravação antes de diagnosticar.', 'warning'); return; }
       setupAbort = new AbortController(); const abort = setupAbort;
       let action: string | undefined;
       try {
         const l = refresh(ctx);
-        if (command !== 'doctor') { setupTask = settings(ctx.ui, l, r.recorder, abort.signal, { state: r.controller.state, busy: r.controller.busy, shortcut, onSaved: () => { profileOverride = undefined; } }); action = await setupTask as string | undefined; }
+        if (command !== 'doctor') { setupTask = settings(ctx.ui, l, r.recorder, abort.signal, { state: r.controller.state, busy: r.controller.busy, shortcut, onSaved: () => { modelOverride = undefined; } }); action = await setupTask as string | undefined; }
         else { setupTask = doctor(l, r.recorder, abort.signal, shortcut); ctx.ui.notify(await setupTask as string); }
       } finally { if (setupAbort === abort) { setupAbort = undefined; setupTask = undefined; } }
       if (abort.signal.aborted) return;
-      if (action === 'start' && gate.focused) { const l = refresh(ctx); await r.controller.start(l.config, l.consents); }
+      if (action === 'start' && gate.focused) { const l = refresh(ctx); await r.controller.start(l.config); }
       if (action === 'stop') await r.controller.stop();
       if (action === 'cancel') await r.controller.cancel();
-    } else ctx.ui.notify(`Voz: ${r.controller.state}. ${shortcut.toUpperCase()} inicia/para; /voice start | stop | cancel | status | settings | doctor | profile [nome]. Texto é colado para revisão, sem envio automático.`);
+    } else ctx.ui.notify(`Voz: ${r.controller.state}. ${shortcut.toUpperCase()} inicia/para; /voice start | stop | cancel | status | settings | doctor | model [tiny|base|small]. Texto é colado para revisão, sem envio automático.`);
   }) });
   pi.on('ui_prompt_start', () => { ++modalDepth; });
   pi.on('ui_prompt_end', () => { modalDepth = Math.max(0, modalDepth - 1); });

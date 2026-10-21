@@ -1,6 +1,7 @@
 import { readFile, mkdir, writeFile, access } from 'node:fs/promises';
 import { join } from 'node:path';
-import { LOCAL_MODEL, LOCAL_REVISION } from './process.mjs';
+import { readyMarker } from './process.mjs';
+import { modelInfo } from './models.mjs';
 
 // IPC is the only output channel. Neither WAV data nor transcript goes to logs.
 process.on('disconnect', () => process.exit(0));
@@ -8,7 +9,8 @@ const reply = message => new Promise(resolve => process.send?.(message, () => re
 process.once('message', async job => {
   let pipeline;
   try {
-    const marker = join(job.cacheDir, `ready-${LOCAL_REVISION}.json`);
+    const { repo, revision } = modelInfo(job.model);
+    const marker = readyMarker(job.model, job.cacheDir);
     if (job.task !== 'install') {
       try { await access(marker); } catch { throw Object.assign(new Error(), { code: 'LOCAL_NOT_READY' }); }
     }
@@ -21,25 +23,25 @@ process.once('message', async job => {
     // Inference never downloads anything. Only explicit install can contact the model hub.
     let lastProgress = 0;
     const options = {
-      dtype: 'q8', device: 'cpu', revision: LOCAL_REVISION, local_files_only: job.task !== 'install',
+      dtype: 'q8', device: 'cpu', revision, local_files_only: job.task !== 'install',
       ...(job.task === 'install' ? { progress_callback: () => { if (Date.now() - lastProgress > 250) { lastProgress = Date.now(); process.send?.({ kind: 'progress' }); } } } : {}),
     };
     // Explicit components avoid pipeline metadata discovery, which may query the hub even in offline mode.
     let model, tokenizer, processor;
     if (job.task === 'install') {
       [model, tokenizer, processor] = await Promise.all([
-        WhisperForConditionalGeneration.from_pretrained(LOCAL_MODEL, options),
-        AutoTokenizer.from_pretrained(LOCAL_MODEL, options),
-        WhisperProcessor.from_pretrained(LOCAL_MODEL, options),
+        WhisperForConditionalGeneration.from_pretrained(repo, options),
+        AutoTokenizer.from_pretrained(repo, options),
+        WhisperProcessor.from_pretrained(repo, options),
       ]);
     } else {
       // Transformers 4's auto-tokenizer discovers metadata over HTTP, even with local_files_only.
       // Construct the fixed Whisper components directly from the pinned cache instead.
-      const root = join(job.cacheDir, LOCAL_MODEL, LOCAL_REVISION);
+      const root = join(job.cacheDir, repo, revision);
       const json = async name => JSON.parse(await readFile(join(root, name), 'utf8'));
       const [tokenizerJSON, tokenizerConfig, processorConfig, loadedModel] = await Promise.all([
         json('tokenizer.json'), json('tokenizer_config.json'), json('preprocessor_config.json'),
-        WhisperForConditionalGeneration.from_pretrained(LOCAL_MODEL, options),
+        WhisperForConditionalGeneration.from_pretrained(repo, options),
       ]);
       model = loadedModel;
       tokenizer = new WhisperTokenizer(tokenizerJSON, tokenizerConfig);
@@ -48,7 +50,7 @@ process.once('message', async job => {
     pipeline = new AutomaticSpeechRecognitionPipeline({ task: 'automatic-speech-recognition', model, tokenizer, processor });
     if (job.task === 'install') {
       await mkdir(job.cacheDir, { recursive: true, mode: 0o700 });
-      await writeFile(marker, JSON.stringify({ model: LOCAL_MODEL, revision: LOCAL_REVISION }), { mode: 0o600 });
+      await writeFile(marker, JSON.stringify({ model: repo, revision }), { mode: 0o600 });
     }
     let text;
     if (job.task === 'transcribe') {
