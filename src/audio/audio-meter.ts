@@ -27,8 +27,13 @@ export class Waveform {
   constructor(bars = 14, private readonly noiseFloorDb = -60) { this.levels = Array<number>(bars).fill(0); }
   tick(rms: number): number[] {
     const db = 20 * Math.log10(Math.max(1e-9, rms));
-    const target = Math.max(0, Math.min(1, (db - this.noiseFloorDb) / -this.noiseFloorDb));
-    this.amplitude += (target - this.amplitude) * (target > this.amplitude ? 0.35 : 0.18);
+    // Speech rarely reaches digital full scale. Expand its useful range for
+    // display only, with a gentle lift for quiet microphones above the floor.
+    const fullScaleDb = Math.max(-18, this.noiseFloorDb + 12);
+    const normalized = Math.max(0, Math.min(1, (db - this.noiseFloorDb) / (fullScaleDb - this.noiseFloorDb)));
+    const target = Math.pow(normalized, 0.75);
+    // At 8 FPS, follow syllables immediately and release between words.
+    this.amplitude += (target - this.amplitude) * (target > this.amplitude ? 0.9 : 0.65);
     this.levels.shift(); this.levels.push(Math.round(this.amplitude * 7)); return this.levels;
   }
 }

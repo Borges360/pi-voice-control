@@ -13,3 +13,26 @@ test('waveform smooths actual signal, decays on silence and has fixed buffer', (
   assert.ok(wave.levels.at(-1) >= 5); const peak = wave.levels.at(-1); wave.tick(0); assert.ok(wave.levels.at(-1)<peak);
   for(let i=0;i<1000;i++) wave.tick(0); assert.equal(wave.levels.length,14); assert.ok(wave.levels.every(x=>x===0));
 });
+
+test('quiet speech is visible immediately and syllable changes remain distinct', () => {
+  const wave = new Waveform();
+  wave.tick(0.003); // Quiet microphone, about -50 dBFS.
+  const quiet = wave.levels.at(-1);
+  assert.ok(quiet >= 2);
+  wave.tick(0.03);
+  const syllable = wave.levels.at(-1);
+  assert.ok(syllable >= quiet + 2);
+  wave.tick(0.003);
+  assert.ok(wave.levels.at(-1) <= syllable - 2);
+  for (let i = 0; i < 3; i++) wave.tick(0);
+  assert.equal(wave.levels.at(-1), 0);
+});
+
+test('display gain keeps silence and sub-floor noise flat without exceeding bar range', () => {
+  const wave = new Waveform();
+  for (const rms of [0, 0.0001, 0.0005]) wave.tick(rms);
+  assert.ok(wave.levels.every(level => level === 0));
+  for (const rms of [0.01, 0.1, 1]) wave.tick(rms);
+  assert.ok(wave.levels.every(level => level >= 0 && level <= 7));
+  assert.equal(wave.levels.at(-1), 7);
+});
