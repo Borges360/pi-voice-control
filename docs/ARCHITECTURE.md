@@ -14,7 +14,8 @@ código de `pasteToEditor`, widgets e teardown de `/reload`.
 - `audio/wav-writer.ts`: escrita assíncrona com backpressure, limite de bytes,
   cabeçalho WAV finalizado, permissões POSIX 0600, diretório exclusivo por sessão.
 - `audio/audio-meter.ts`: RMS em janelas de 320 amostras (20ms), sem armazenar
-  áudio em RAM; UI usa buffer fixo 14–20 valores, ataque 0,35/decaimento 0,18.
+  áudio em RAM; UI usa buffer fixo 14–20 valores, ganho visual para fala baixa,
+  escala até -18 dBFS e ataque 0,90/decaimento 0,65 para acompanhar sílabas.
 - `providers/transcription.ts`: contrato independente do motor STT; factory para
   local incluído, OpenRouter JSON/base64 ou HTTP multipart e catálogo opcional.
 - `local/`: processo Node descartável com Transformers.js/ONNX CPU e Whisper tiny.
