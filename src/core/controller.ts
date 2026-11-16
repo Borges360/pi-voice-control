@@ -5,11 +5,11 @@ import { VoiceError, userError, type AudioCapture, type CaptureSession, type Rec
 
 export interface VoiceView { state: VoiceState; startedAt: number; rms: number }
 export interface ControllerHooks {
-  update(view: VoiceView): void; paste(text: string): void;
+  update(view: VoiceView): void; paste(text: string): void; getTargetId(): string;
   notify(message: string, type?: 'info' | 'warning' | 'error'): void;
 }
 interface Operation {
-  id: number; abort: AbortController; config: VoiceConfig; capture?: CaptureSession;
+  id: number; targetId: string; abort: AbortController; config: VoiceConfig; capture?: CaptureSession;
   starting?: Promise<void>; stopping?: Promise<void>; audio?: RecordedAudio;
   timer?: ReturnType<typeof setTimeout>; invalid: boolean; inserted: boolean;
 }
@@ -26,8 +26,8 @@ export class VoiceController {
   private change(state: VoiceState) { this.state = state; this.view = { ...this.view, state }; this.hooks.update({ ...this.view }); }
   async start(config: VoiceConfig): Promise<void> {
     if (this.disposed) return;
-    if (this.active) { this.hooks.notify('Voz já está ocupada; /voice cancel para cancelar.', 'warning'); return; }
-    const op: Operation = { id: ++this.generation, abort: new AbortController(), config: structuredClone(config), invalid: false, inserted: false };
+    if (this.active) { this.hooks.notify('Voice Control is busy; run /voice cancel to stop the current operation.', 'warning'); return; }
+    const op: Operation = { id: ++this.generation, targetId: this.hooks.getTargetId(), abort: new AbortController(), config: structuredClone(config), invalid: false, inserted: false };
     this.active = op; this.view = { state: 'IDLE', startedAt: 0, rms: 0 }; this.change('STARTING');
     op.starting = this.begin(op); await op.starting;
   }
@@ -47,12 +47,12 @@ export class VoiceController {
       this.view.startedAt = performance.now(); this.change('RECORDING');
       op.timer = setTimeout(() => {
         if (!this.current(op) || this.state !== 'RECORDING') return;
-        this.hooks.notify(`Limite de ${op.config.capture.maxSeconds}s atingido; finalizando.`);
+        this.hooks.notify(`Limit of ${op.config.capture.maxSeconds}s reached; finalizing.`);
         void this.stop();
       }, op.config.capture.maxSeconds * 1000);
       void capture.completed.then(result => {
         if (this.current(op) && this.state === 'RECORDING') {
-          if (!result.error) this.hooks.notify('Captura encerrada; transcrevendo.');
+          if (!result.error) this.hooks.notify('Capture finished; transcribing.');
           void this.stop();
         }
       });
@@ -65,7 +65,7 @@ export class VoiceController {
     const op = this.active;
     if (!op || !this.current(op)) return;
     if (op.stopping) return op.stopping;
-    if (this.state !== 'RECORDING') { this.hooks.notify('Aguarde a operação atual; /voice cancel para descartar.', 'warning'); return; }
+    if (this.state !== 'RECORDING') { this.hooks.notify('Wait for the current operation or run /voice cancel to discard it.', 'warning'); return; }
     if (op.timer) clearTimeout(op.timer);
     this.change('FINALIZING'); op.stopping = this.finalize(op); await op.stopping;
   }
@@ -73,17 +73,22 @@ export class VoiceController {
     try {
       const audio = await op.capture!.stop(); op.audio = audio;
       if (!this.current(op)) return;
-      if (audio.durationMs < op.config.capture.minMs) throw new VoiceError('TOO_SHORT', `Gravação curta demais; fale por pelo menos ${op.config.capture.minMs} ms.`);
-      if (audio.peakRms < op.config.capture.silenceRms) { this.hooks.notify('Nenhuma fala detectada.'); this.change('SUCCESS'); return; }
+      if (audio.durationMs < op.config.capture.minMs) throw new VoiceError('TOO_SHORT', `Recording is too short; speak for at least ${op.config.capture.minMs} ms.`);
+      if (audio.peakRms < op.config.capture.silenceRms) { this.hooks.notify('No speech detected.'); this.change('SUCCESS'); return; }
       this.change('TRANSCRIBING');
       const { text } = await this.provider(op.config).transcribe(audio, {
         model: op.config.transcription.model,
         language: op.config.language, timeoutMs: op.config.transcription.timeoutMs, signal: op.abort.signal,
       });
       if (!this.current(op) || op.inserted) return;
+      if (this.hooks.getTargetId() !== op.targetId) {
+        this.hooks.notify('The editor target changed; transcription was discarded.', 'warning');
+        this.change('CANCELLED');
+        return;
+      }
       const clean = sanitizeTranscript(text);
       if (clean) { op.inserted = true; this.hooks.paste(clean); }
-      else this.hooks.notify('Nenhuma fala detectada.');
+      else this.hooks.notify('No speech detected.');
       this.change('SUCCESS');
     } catch (error) {
       if (this.current(op)) { this.change('ERROR'); this.hooks.notify(userError(error), 'error'); }
@@ -92,7 +97,7 @@ export class VoiceController {
   private async release(op: Operation): Promise<void> {
     if (op.timer) clearTimeout(op.timer);
     try { await op.capture?.cancel(); await op.audio?.cleanup(); }
-    catch { if (this.current(op)) this.hooks.notify('Falha ao excluir áudio temporário; execute /voice doctor.', 'warning'); }
+    catch { if (this.current(op)) this.hooks.notify('Could not delete temporary audio; run /voice doctor.', 'warning'); }
     finally { if (this.active === op && !op.invalid) { this.active = undefined; this.change('IDLE'); } }
   }
   async cancel(): Promise<void> {

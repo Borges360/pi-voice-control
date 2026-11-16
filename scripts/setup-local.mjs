@@ -1,12 +1,11 @@
-import { runLocal, installedDefault, localCache } from '../src/local/process.mjs';
+import { agentDirectory, runLocal, installedDefault, localCache } from '../src/local/process.mjs';
 import { isLocalModel, modelInfo } from '../src/local/models.mjs';
 import { readFile, mkdir, writeFile, rename, rm } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 let savedModel;
-try { savedModel = JSON.parse(await readFile(join(homedir(), '.pi', 'agent', 'voice-control.json'), 'utf8')).transcription?.model; } catch {}
+try { savedModel = JSON.parse(await readFile(join(agentDirectory(), 'voice-control.json'), 'utf8')).transcription?.model; } catch {}
 const model = process.env.PI_VOICE_MODEL ?? (isLocalModel(savedModel) ? savedModel : installedDefault());
 if (!isLocalModel(model)) {
   console.error('Voice: PI_VOICE_MODEL inválido. Use tiny, base ou small.');

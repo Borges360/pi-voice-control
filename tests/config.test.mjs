@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import Ajv from 'ajv';
 import { defaults, validateConfig, mergeConfig } from '../dist/src/config/validate.js';
 import { loadConfig, saveGlobal } from '../dist/src/config/load.js';
+import { agentDirectory, localCache } from '../src/local/process.mjs';
 
 test('defaults and all local model examples satisfy real JSON schema and runtime validation', async () => {
   const schema = JSON.parse(await readFile(new URL('../schemas/voice-control.schema.json', import.meta.url), 'utf8'));
@@ -69,4 +70,30 @@ test('installation default is used only below saved settings and overrides',asyn
     assert.equal(loadConfig(join(home,'project'),{},{},home).config.transcription.model,'tiny');
     assert.equal(loadConfig(join(home,'project'),{PI_VOICE_MODEL:'base'},{},home).config.transcription.model,'base');
   } finally { await rm(home,{recursive:true,force:true}); }
+});
+
+test('PI_CODING_AGENT_DIR isolates voice settings and model cache', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'voice-agent-dir-'));
+  const home = join(root, 'home'); const agentDir = join(root, 'isolated-agent'); const cwd = join(root, 'project');
+  try {
+    const fallbackPath = join(home, '.pi', 'agent', 'voice-control.json');
+    const fallbackText = JSON.stringify({ language: 'es' });
+    await mkdir(join(home, '.pi', 'agent'), { recursive: true });
+    await mkdir(join(agentDir, 'cache', 'voice-control'), { recursive: true });
+    await writeFile(fallbackPath, fallbackText);
+    await writeFile(join(agentDir, 'voice-control.json'), JSON.stringify({ language: 'en' }));
+    await writeFile(join(agentDir, 'cache', 'voice-control', 'default-model.json'), JSON.stringify({ model: 'small' }));
+
+    const env = { PI_CODING_AGENT_DIR: agentDir };
+    const loaded = loadConfig(cwd, env, {}, home);
+    assert.equal(agentDirectory(env, home), agentDir);
+    assert.equal(localCache(env, home), join(agentDir, 'cache', 'voice-control'));
+    assert.equal(loaded.globalPath, join(agentDir, 'voice-control.json'));
+    assert.equal(loaded.config.language, 'en');
+    assert.equal(loaded.config.transcription.model, 'small');
+
+    await saveGlobal(loaded.globalPath, loaded.config);
+    assert.equal(await readFile(fallbackPath, 'utf8'), fallbackText);
+    assert.equal(JSON.parse(await readFile(loaded.globalPath, 'utf8')).language, 'en');
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
