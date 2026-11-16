@@ -23,7 +23,7 @@ código de `pasteToEditor`, widgets e teardown de `/reload`.
   stdout/stderr são ignorados e não herda credenciais, NODE_OPTIONS ou flags Pi.
   Modelo/revisão fixos; download apenas na instalação/reparo. Inferência carrega
   os arquivos do cache e bloqueia fetch. Encerramento espera close do processo.
-- `config/`: merge estrito/validação, modelo tiny/base/small, migração legada, env/CLI e save atômico.
+- `config/`: merge estrito/validação, modelo tiny/base/small, migração legada, env/CLI e save atômico. Configuração global e cache de modelos seguem `PI_CODING_AGENT_DIR`, com `~/.pi/agent` como padrão.
 - `security/`: sanitização de controles de terminal, sem correção semântica.
 - `ui/`: widget/status na chave `pi-voice-control`, painel transacional Ctrl+S e diagnóstico.
 
@@ -36,6 +36,10 @@ discard, abort e drenagem de ações são explícitos. Nenhuma extensão irmã �
 Fluxo: `IDLE → STARTING → RECORDING → FINALIZING → TRANSCRIBING → SUCCESS → IDLE`.
 Erro: `ERROR → IDLE`. Cancelamento: `CANCELLED → IDLE` depois da limpeza.
 Nenhum resultado de geração inválida pode inserir ou limpar UI da próxima sessão.
+A API pública do Pi 1.3.x usada aqui só cola no editor principal; a captura registra
+esse destino, diretório, sessão e ramo. Uma transcrição atrasada é descartada se a
+sessão ou ramo mudar antes da inserção. Não há integração com campos de wizard que
+não sejam expostos por uma API compatível do host.
 `stop()` é idempotente; flags de inserção são marcadas antes do paste.
 Nenhum callback externo é interpretado como código ou comando de shell.
 Antes do microfone, `prepare` verifica o marcador da revisão do modelo local selecionado. Cancelamento durante essa fase invalida a abertura tardia da captura.

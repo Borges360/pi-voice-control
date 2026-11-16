@@ -21,5 +21,5 @@ export class VoiceError extends Error {
   constructor(readonly code: string, message: string) { super(message); this.name = 'VoiceError'; }
 }
 export function userError(error: unknown): string {
-  return error instanceof VoiceError ? `${error.message} [${error.code}]` : 'Operação de voz falhou; execute /voice doctor. [INTERNAL]';
+  return error instanceof VoiceError ? `${error.message} [${error.code}]` : 'Voice operation failed; run /voice doctor. [INTERNAL]';
 }

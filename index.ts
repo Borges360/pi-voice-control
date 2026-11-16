@@ -12,9 +12,10 @@ import { VoiceIndicator } from './src/ui/voice-indicator.js';
 import { InputGate, normalizeFunctionKey } from './src/ui/input-gate.js';
 import { settings } from './src/ui/settings.js';
 import { doctor } from './src/ui/doctor.js';
+import { loadProjectLocale, saveProjectLocale, translateText, type Locale } from './src/i18n.js';
 
 export default function voiceControl(pi: ExtensionAPI): void {
-  for (const [flag, description] of [['voice-model', 'Whisper local: tiny, base ou small'], ['voice-language', 'Idioma do ditado']] as const) {
+  for (const [flag, description] of [['voice-model', 'Local Whisper model: tiny, base, or small'], ['voice-language', 'Dictation language']] as const) {
     pi.registerFlag(flag, { type: 'string', description });
   }
   const flags = () => {
@@ -28,7 +29,10 @@ export default function voiceControl(pi: ExtensionAPI): void {
   try { initial = loadConfig(process.cwd(), process.env, flags()); } catch { /* Report after UI exists; never fall back to defaults for capture. */ }
   const shortcut = initial?.config.shortcut ?? defaults.shortcut;
   let gate = new InputGate(initial?.config.debounceMs);
-  let runtime: { ctx: ExtensionContext; loaded: LoadedConfig; recorder: FFmpegRecorder; controller: VoiceController; indicator: VoiceIndicator } | undefined;
+  let runtime: {
+    ctx: ExtensionContext; loaded: LoadedConfig; recorder: FFmpegRecorder; controller: VoiceController; indicator: VoiceIndicator;
+    trusted: boolean; locale(): Locale; setLocale(locale: Locale): void;
+  } | undefined;
   let unsubscribe: (() => void) | undefined;
   let setupAbort: AbortController | undefined;
   let setupTask: Promise<unknown> | undefined;
@@ -39,17 +43,25 @@ export default function voiceControl(pi: ExtensionAPI): void {
     if (modelOverride) loaded.config.transcription.model = modelOverride;
     return loaded;
   };
+  const activeLocale = (ctx: ExtensionContext): Locale => runtime?.ctx.cwd === ctx.cwd
+    ? runtime.locale() : loadProjectLocale(ctx.cwd, ctx.isProjectTrusted());
+  const notify = (ctx: ExtensionContext, message: string, kind?: 'info' | 'warning' | 'error') =>
+    ctx.ui.notify(translateText(message, activeLocale(ctx)), kind);
   const get = (ctx: ExtensionContext) => {
-    if (!ctx.hasUI || !process.stdin.isTTY || !process.stdout.isTTY) { ctx.ui.notify('Voz requer Pi interativo em terminal local; RPC/print não capturam áudio.', 'warning'); return undefined; }
+    if (!ctx.hasUI || !process.stdin.isTTY || !process.stdout.isTTY) { notify(ctx, 'Voice Control requires interactive Pi in a local terminal; RPC/print cannot capture audio.', 'warning'); return undefined; }
     if (runtime) return runtime;
     const loaded = refresh(ctx); const recorder = new FFmpegRecorder(loaded.ffmpegPath);
+    const trusted = ctx.isProjectTrusted(); let locale = loadProjectLocale(ctx.cwd, trusted);
     let controller!: VoiceController;
-    const indicator = new VoiceIndicator(ctx.ui, loaded.config.ui, () => controller.snapshot());
+    const indicator = new VoiceIndicator(ctx.ui, loaded.config.ui, () => controller.snapshot(), () => locale);
     controller = new VoiceController(recorder, c => createProvider(c.transcription.model), {
-      update: v => indicator.update(v), paste: text => ctx.ui.pasteToEditor(text), notify: (message, kind) => ctx.ui.notify(message, kind),
+      update: v => indicator.update(v), paste: text => ctx.ui.pasteToEditor(text),
+      getTargetId: () => JSON.stringify(['main-editor', ctx.cwd, ctx.sessionManager.getSessionId(), ctx.sessionManager.getLeafId()]),
+      notify: (message, kind) => ctx.ui.notify(translateText(message, locale), kind),
     });
-    if (loaded.migrated) ctx.ui.notify('Voz agora usa somente Whisper local. Configuração antiga adaptada; Ctrl+S em /voice salva o novo formato.', 'info');
-    runtime = { ctx, loaded, recorder, controller, indicator }; gate = new InputGate(loaded.config.debounceMs);
+    runtime = { ctx, loaded, recorder, controller, indicator, trusted, locale: () => locale, setLocale: next => { locale = next; } };
+    if (loaded.migrated) notify(ctx, 'Voice Control now uses local Whisper only. Legacy settings were migrated; press Ctrl+S in /voice to save the new format.', 'info');
+    gate = new InputGate(loaded.config.debounceMs);
     unsubscribe = ctx.ui.onTerminalInput(data => {
       if (data === '\x1b[I' || data === '\x1b[O') { gate.focus(data === '\x1b[I'); return { consume: true }; }
       const normalized = normalizeFunctionKey(data, shortcut);
@@ -58,50 +70,56 @@ export default function voiceControl(pi: ExtensionAPI): void {
       if (modalDepth || setupAbort || !gate.press(kind)) return { consume: true };
       permittedAt = performance.now(); return normalized && normalized !== data ? { data: normalized } : undefined;
     });
-    if (!initialized) { initialized = true; void cleanupOrphans().catch(() => ctx.ui.notify('Limpeza de temporários antigos indisponível.', 'warning')); }
+    if (!initialized) { initialized = true; void cleanupOrphans().catch(() => notify(ctx, 'Could not clean up old temporary files.', 'warning')); }
     // Focus reporting only; no cursor positioning, hooks or global keyboard listeners.
     process.stdout.write('\x1b[?1004h');
     return runtime;
   };
-  const protect = async (ctx: ExtensionContext, work: () => Promise<void>) => { try { await work(); } catch (error) { ctx.ui.notify(userError(error), 'error'); } };
-  pi.registerShortcut(shortcut as KeyId, { description: 'Voice: iniciar/parar ditado', handler: ctx => protect(ctx, async () => {
+  const protect = async (ctx: ExtensionContext, work: () => Promise<void>) => { try { await work(); } catch (error) { notify(ctx, userError(error), 'error'); } };
+  pi.registerShortcut(shortcut as KeyId, { description: 'Voice: start/stop dictation', handler: ctx => protect(ctx, async () => {
     const r = get(ctx); if (!r || modalDepth || setupAbort || !gate.focused) return;
     // Only native input may start capture; no API tool is registered.
     if (performance.now() - permittedAt > 100) return;
     permittedAt = -Infinity;
     if (r.controller.state === 'RECORDING') await r.controller.stop();
     else if (!r.controller.busy) { const l = refresh(ctx); await r.controller.start(l.config); }
-    else ctx.ui.notify('Voz ocupada; /voice cancel para cancelar.', 'warning');
+    else notify(ctx, 'Voice Control is busy; run /voice cancel to stop the current operation.', 'warning');
   }) });
-  pi.registerCommand('voice', { description: 'Abrir menu de voz (Ctrl+S salva); start, stop, cancel, status, settings, doctor, model', handler: (args, ctx) => protect(ctx, async () => {
+  pi.registerCommand('voice', { description: 'Open the voice menu (Ctrl+S saves); start, stop, cancel, status, settings, doctor, model', handler: (args, ctx) => protect(ctx, async () => {
     const [command = '', ...rest] = args.trim().split(/\s+/);
     const r = get(ctx); if (!r) return;
     if (command === 'cancel') { setupAbort?.abort(); await r.controller.cancel(); return; }
-    if (setupAbort) { ctx.ui.notify('Configuração/diagnóstico em andamento.', 'warning'); return; }
-    if (command === 'start') { if (!gate.focused) { ctx.ui.notify('Terminal sem foco.', 'warning'); return; } const l = refresh(ctx); await r.controller.start(l.config); }
+    if (setupAbort) { notify(ctx, 'Configuration or diagnostics are already running.', 'warning'); return; }
+    if (command === 'start') { if (!gate.focused) { notify(ctx, 'The terminal is not focused.', 'warning'); return; } const l = refresh(ctx); await r.controller.start(l.config); }
     else if (command === 'stop') await r.controller.stop();
     else if (command === 'status') {
       const l = refresh(ctx); const c = l.config;
-      ctx.ui.notify(`Voz: ${r.controller.state} | microfone: ${c.capture.deviceId} | modelo local: ${c.transcription.model} | idioma: ${c.language} | atalho: ${shortcut}${shortcut !== c.shortcut ? ' (/reload pendente)' : ''}`);
+      notify(ctx, `Voice: ${r.controller.state} | microphone: ${c.capture.deviceId} | local model: ${c.transcription.model} | transcription language: ${c.language} | shortcut: ${shortcut}${shortcut !== c.shortcut ? ' (/reload pending)' : ''}`);
     } else if (command === 'model') {
       const name = rest.join(' ');
-      if (!name) ctx.ui.notify(`Modelos locais: tiny, base, small; ativo: ${refresh(ctx).config.transcription.model}. Use /voice para baixar e salvar.`);
-      else if (!isLocalModel(name)) ctx.ui.notify('Escolha tiny, base ou small.', 'warning');
-      else { modelOverride = name; ctx.ui.notify(`Whisper ${name} selecionado para a sessão. Se necessário, abra /voice e prepare o modelo.`); }
+      if (!name) notify(ctx, `Available local models: tiny, base, small; active: ${refresh(ctx).config.transcription.model}. Open /voice to prepare and save a model.`);
+      else if (!isLocalModel(name)) notify(ctx, 'Choose tiny, base, or small.', 'warning');
+      else { modelOverride = name; notify(ctx, `Whisper ${name} selected for this session. Open /voice to prepare the model if needed.`); }
     } else if (command === '' || command === 'settings' || command === 'doctor') {
-      if (r.controller.busy && command === 'doctor') { ctx.ui.notify('Encerre ou cancele a gravação antes de diagnosticar.', 'warning'); return; }
+      if (r.controller.busy && command === 'doctor') { notify(ctx, 'Stop or cancel the recording before running diagnostics.', 'warning'); return; }
       setupAbort = new AbortController(); const abort = setupAbort;
       let action: string | undefined;
       try {
         const l = refresh(ctx);
-        if (command !== 'doctor') { setupTask = settings(ctx.ui, l, r.recorder, abort.signal, { state: r.controller.state, busy: r.controller.busy, shortcut, onSaved: () => { modelOverride = undefined; } }); action = await setupTask as string | undefined; }
-        else { setupTask = doctor(l, r.recorder, abort.signal, shortcut); ctx.ui.notify(await setupTask as string); }
+        if (command !== 'doctor') {
+          setupTask = settings(ctx.ui, l, r.recorder, abort.signal, {
+            state: r.controller.state, busy: r.controller.busy, shortcut, onSaved: () => { modelOverride = undefined; },
+            trusted: r.trusted, locale: r.locale, onLocaleChange: r.setLocale,
+            saveLocale: next => saveProjectLocale(ctx.cwd, r.trusted, next),
+          }); action = await setupTask as string | undefined;
+        }
+        else { setupTask = doctor(l, r.recorder, abort.signal, shortcut, r.locale); notify(ctx, await setupTask as string); }
       } finally { if (setupAbort === abort) { setupAbort = undefined; setupTask = undefined; } }
       if (abort.signal.aborted) return;
       if (action === 'start' && gate.focused) { const l = refresh(ctx); await r.controller.start(l.config); }
       if (action === 'stop') await r.controller.stop();
       if (action === 'cancel') await r.controller.cancel();
-    } else ctx.ui.notify(`Voz: ${r.controller.state}. ${shortcut.toUpperCase()} inicia/para; /voice start | stop | cancel | status | settings | doctor | model [tiny|base|small]. Texto é colado para revisão, sem envio automático.`);
+    } else notify(ctx, `Voice: ${r.controller.state}. ${shortcut.toUpperCase()} starts/stops dictation; /voice start | stop | cancel | status | settings | doctor | model [tiny|base|small]. Transcribed text is pasted for review and never submitted automatically.`);
   }) });
   pi.on('ui_prompt_start', () => { ++modalDepth; });
   pi.on('ui_prompt_end', () => { modalDepth = Math.max(0, modalDepth - 1); });

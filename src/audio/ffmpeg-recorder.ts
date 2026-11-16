@@ -25,7 +25,7 @@ export class FFmpegRecorder implements AudioCapture {
     let device = options.deviceId;
     if (device === 'default' && this.platform !== 'linux') {
       const devices = await this.listDevices(signal); signal.throwIfAborted();
-      if (!devices.length) throw new VoiceError('NO_DEVICE', 'Nenhum microfone disponível; use /voice settings.');
+      if (!devices.length) throw new VoiceError('NO_DEVICE', 'No microphone is available; use /voice settings.');
       device = devices[0]!.id;
     }
     const writer = await WavWriter.create(options.maxSeconds);
@@ -33,7 +33,7 @@ export class FFmpegRecorder implements AudioCapture {
     const args = ['-hide_banner', '-loglevel', 'error', ...inputArgs(device, this.platform), '-t', String(options.maxSeconds), '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-f', 's16le', 'pipe:1'];
     let child: ReturnType<typeof spawn>;
     try { child = this.launch(this.executable, args, { shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] }); }
-    catch { await writer.cleanup(); throw new VoiceError('FFMPEG_MISSING', 'Não foi possível iniciar FFmpeg.'); }
+    catch { await writer.cleanup(); throw new VoiceError('FFMPEG_MISSING', 'Could not start FFmpeg.'); }
     track(child);
     // Do not retain or expose device names / OS logs from stderr.
     child.stderr!.resume(); child.stdin!.on('error', () => {});
@@ -43,9 +43,9 @@ export class FFmpegRecorder implements AudioCapture {
     const meter = new AudioMeter(options.onLevel);
     let resolveClose!: () => void;
     const closed = new Promise<void>(r => { resolveClose = r; });
-    child.once('error', () => { failure = new VoiceError('FFMPEG_MISSING', 'FFmpeg não encontrado ou não executável.'); });
+    child.once('error', () => { failure = new VoiceError('FFMPEG_MISSING', 'FFmpeg was not found or is not executable.'); });
     child.once('close', (code, killed) => {
-      if (!requestedStop && (code !== 0 || killed)) failure ??= new VoiceError('CAPTURE_FAILED', 'Microfone indisponível, ocupado ou desconectado; use /voice doctor.');
+      if (!requestedStop && (code !== 0 || killed)) failure ??= new VoiceError('CAPTURE_FAILED', 'Microphone unavailable, busy, or disconnected; run /voice doctor.');
       resolveReady(); resolveClose();
     });
     let killTimer: ReturnType<typeof setTimeout> | undefined;
@@ -67,7 +67,7 @@ export class FFmpegRecorder implements AudioCapture {
           if (chunk.length >= 2 && !sawSamples) { sawSamples = true; resolveReady(); }
           if (!room) terminate();
         }
-      } catch { failure ??= new VoiceError('CAPTURE_IO', 'Falha ao capturar ou gravar áudio temporário.'); terminate(); }
+      } catch { failure ??= new VoiceError('CAPTURE_IO', 'Could not capture or write temporary audio.'); terminate(); }
     })();
     const completed = (async () => {
       await closed; await stream;
@@ -79,9 +79,9 @@ export class FFmpegRecorder implements AudioCapture {
     const stop = (): Promise<RecordedAudio> => finish ??= (async () => {
       terminate(); const result = await completed;
       signal.removeEventListener('abort', abort);
-      if (cancelled || signal.aborted) throw new VoiceError('CANCELLED', 'Gravação cancelada.');
+      if (cancelled || signal.aborted) throw new VoiceError('CANCELLED', 'Recording canceled.');
       if (result.error) throw result.error;
-      if (!sawSamples) throw new VoiceError('NO_FRAMES', 'Microfone não produziu áudio.');
+      if (!sawSamples) throw new VoiceError('NO_FRAMES', 'The microphone produced no audio.');
       return writer.finish(meter.peak);
     })();
     const cancel = (): Promise<void> => cancellation ??= (async () => {
@@ -92,12 +92,12 @@ export class FFmpegRecorder implements AudioCapture {
     const abort = () => { void cancel().catch(() => {}); };
     signal.addEventListener('abort', abort, { once: true });
     if (signal.aborted) abort();
-    const startupTimer = setTimeout(() => { failure = new VoiceError('CAPTURE_TIMEOUT', 'Microfone não respondeu em 8 segundos.'); terminate(); }, this.timeouts.startupMs);
+    const startupTimer = setTimeout(() => { failure = new VoiceError('CAPTURE_TIMEOUT', 'The microphone did not respond within 8 seconds.'); terminate(); }, this.timeouts.startupMs);
     try {
       await ready;
       signal.throwIfAborted();
       if (failure) throw failure;
-      if (!sawSamples) throw new VoiceError('NO_FRAMES', 'Microfone não produziu áudio.');
+      if (!sawSamples) throw new VoiceError('NO_FRAMES', 'The microphone produced no audio.');
       return { stop, cancel, completed };
     } catch (error) { await cancel(); throw error; }
     finally { clearTimeout(startupTimer); }

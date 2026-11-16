@@ -37,14 +37,14 @@ test('interactive wiring: F8 start/stop, focus, modal, reload teardown, existing
     globalThis.fetch=async()=>Response.json({data:[]});
     process.env.PI_VOICE_FFMPEG='missing-ffmpeg-for-extension-test';
     Object.defineProperty(process.stdin,'isTTY',{ configurable:true,value:true }); Object.defineProperty(process.stdout,'isTTY',{ configurable:true,value:true }); process.stdout.write=function(data,...args) { return String(data).includes('\x1b[?1004')?true:stdoutWrite.call(this,data,...args); };
-    voiceControl(api); assert.ok(shortcuts.has('f9')); const ctx={ cwd:root,hasUI:true,ui };
+    voiceControl(api); assert.ok(shortcuts.has('f9')); assert.match(commands.get('voice').description,/Open the voice menu/); const ctx={ cwd:root,hasUI:true,ui,sessionManager:{getSessionId:()=> 'test-session',getLeafId:()=> 'test-leaf'},isProjectTrusted:()=>true };
     await handlers.get('session_start')({},ctx); assert.ok(input);
     input('\x1b[O'); assert.deepEqual(input('\x1b[20;1:1~'),{ consume:true });
     input('\x1b[I'); handlers.get('ui_prompt_start')(); assert.deepEqual(input('\x1b[20;1:1~'),{ consume:true }); handlers.get('ui_prompt_end')();
     await new Promise(r=>setTimeout(r,260));
     input('\x1b[20;1:3~'); assert.deepEqual(input('\x1b[20;1:1~'),{ data:'\x1b[20~' }); await shortcuts.get('f9').handler(ctx);
     assert.ok(notices.some(m=>m.includes('FFMPEG_MISSING')));
-    await commands.get('voice').handler('status',ctx); assert.ok(notices.some(m=>m.includes('IDLE')));
+    await commands.get('voice').handler('status',ctx); assert.ok(notices.some(m=>m.startsWith('Voice: IDLE | microphone: test mic')));
     await handlers.get('session_shutdown')(); assert.equal(unsub,1);
   } finally {
     process.chdir(originalCwd); process.stdout.write=stdoutWrite;

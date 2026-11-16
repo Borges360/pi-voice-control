@@ -1,0 +1,6 @@
+schema: harness/skill-metadata/v1
+id: pi-voice-control
+version: 1.0.0
+owner: pi-voice-control
+source: "AGENTS.md, README.md, pi-voice-control-spec.md, docs/ARCHITECTURE.md, docs/EXTENSION_UX.md, package.json"
+scope: "product-local; Pi, Codex and Cursor"

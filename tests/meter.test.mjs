@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AudioMeter, Waveform } from '../dist/src/audio/audio-meter.js';
+import { indicatorLine } from '../dist/src/ui/voice-indicator.js';
 test('RMS from real PCM windows is independent of odd chunk boundaries', () => {
   const pcm = Buffer.alloc(640); for (let i=0; i<320; i++) pcm.writeInt16LE(i%2 ? -16384 : 16384, i*2);
   const levels = []; const meter = new AudioMeter(v => levels.push(v));
@@ -35,4 +36,15 @@ test('display gain keeps silence and sub-floor noise flat without exceeding bar 
   for (const rms of [0.01, 0.1, 1]) wave.tick(rms);
   assert.ok(wave.levels.every(level => level >= 0 && level <= 7));
   assert.equal(wave.levels.at(-1), 7);
+});
+
+test('voice indicator labels use the English default', () => {
+  const view = { state:'TRANSCRIBING', startedAt:0, rms:0 };
+  assert.equal(indicatorLine(40,view,[],{showDuration:false,waveform:false},0).trim(),'◌ TRANSCRIBING...');
+});
+test('voice indicator labels follow the selected interface language and fit narrow widths', () => {
+  const view = { state:'RECORDING', startedAt:0, rms:0 };
+  const line = indicatorLine(12,view,[],{showDuration:false,waveform:false},0,'pt-BR');
+  assert.equal(line.trim(),'● GRAVANDO');
+  assert.equal(Array.from(line).length,12);
 });

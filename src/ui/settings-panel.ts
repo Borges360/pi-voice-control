@@ -1,7 +1,8 @@
 import { Input, matchesKey, stripTerminalSequences, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component } from '@earendil-works/pi-tui';
 import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent';
+import { translateText, type Locale } from '../i18n.js';
 
-export interface PanelChoice { value: string; label: string }
+export interface PanelChoice { value: string; label: string; translateLabel?: boolean }
 export interface PanelApi {
   input(title: string, value: string): Promise<string | undefined>;
   choose(title: string, choices: PanelChoice[], current?: string): Promise<string | undefined>;
@@ -11,10 +12,12 @@ export interface PanelApi {
 }
 export interface PanelRow {
   id: string; label: string; value(): string; description: string;
+  translateValue?: boolean;
   activate(panel: PanelApi, signal: AbortSignal): Promise<void> | void;
 }
 export interface PanelOptions {
   title: string; summary(): string; rows: PanelRow[]; dirty(): boolean; signal: AbortSignal;
+  locale?: () => Locale;
   save(panel: PanelApi, signal: AbortSignal): Promise<void>;
   formatError?(error: unknown): string;
 }
@@ -35,6 +38,7 @@ export class SettingsPanel implements Component, PanelApi {
   private dialog?: { title: string; input?: Input; choices?: PanelChoice[]; selected: number; resolve(value?: string): void };
   focused = true;
   private readonly abort = () => this.close();
+  private text(value: string): string { return this.options.locale ? translateText(value, this.options.locale()) : value; }
   constructor(private readonly options: PanelOptions, private readonly theme: Theme, private readonly keys: Keys,
     private readonly renderRequest: () => void, private readonly done: (action?: string) => void, private readonly rowsAvailable = () => 24) {
     options.signal.addEventListener('abort', this.abort, { once: true });
@@ -64,7 +68,7 @@ export class SettingsPanel implements Component, PanelApi {
     });
   }
   async confirm(title: string) {
-    return await this.choose(title, [{ value: 'no', label: 'Voltar' }, { value: 'yes', label: 'Autorizar' }]) === 'yes';
+    return await this.choose(title, [{ value: 'no', label: 'Back' }, { value: 'yes', label: 'Authorize' }]) === 'yes';
   }
   async drain() { while (this.pending) await this.pending; }
   private run(work: (signal: AbortSignal) => Promise<void> | void) {
@@ -76,11 +80,11 @@ export class SettingsPanel implements Component, PanelApi {
     if (this.busy || this.closed) return;
     const abort = new AbortController(); this.busy = abort; this.discardPending = false;
     try { await work(abort.signal); }
-    catch (error) { this.report(abort.signal.aborted ? 'Operação cancelada.' : this.options.formatError?.(error) ?? 'Operação falhou. Tente novamente.'); }
+    catch (error) { this.report(abort.signal.aborted ? 'Operation canceled.' : this.options.formatError?.(error) ?? 'Operation failed. Try again.'); }
     finally {
       this.busy = undefined;
       if (!this.closed) {
-        if (abort.signal.aborted) this.status = 'Operação cancelada.';
+        if (abort.signal.aborted) this.status = 'Operation canceled.';
         this.renderRequest();
         if (this.saveAfterEdit) { this.saveAfterEdit = false; void this.run(signal => this.options.save(this, signal)); }
       }
@@ -109,7 +113,7 @@ export class SettingsPanel implements Component, PanelApi {
     if (this.busy) { if (cancel) { this.busy.abort(); this.status = 'Cancelando…'; this.renderRequest(); } return; }
     if (matchesKey(data, 'ctrl+s')) { void this.run(signal => this.options.save(this, signal)); return; }
     if (cancel) {
-      if (this.options.dirty() && !this.discardPending) { this.discardPending = true; this.report('Alterações não salvas. Ctrl+S salva; Esc novamente descarta.'); }
+      if (this.options.dirty() && !this.discardPending) { this.discardPending = true; this.report('Unsaved changes. Press Ctrl+S to save; press Esc again to discard.'); }
       else this.close();
       return;
     }
@@ -127,24 +131,28 @@ export class SettingsPanel implements Component, PanelApi {
     const dialog = this.dialog;
     const labelWidth = Math.max(1, Math.min(26, Math.floor(inner * 0.42)));
     const rows = dialog?.choices ?? this.options.rows.map(r => {
-      const label = truncateToWidth(safe(r.label), labelWidth, '…');
-      return { value: r.id, label: `${label}${' '.repeat(Math.max(1, labelWidth - visibleWidth(label) + 2))}${safe(r.value())}` };
+      const label = truncateToWidth(safe(this.text(r.label)), labelWidth, '…');
+      const value = r.translateValue === false ? r.value() : this.text(r.value());
+      return { value: r.id, label: `${label}${' '.repeat(Math.max(1, labelWidth - visibleWidth(label) + 2))}${safe(value)}` };
     });
+    const displayRows = dialog?.choices?.map(row => ({
+      ...row, label: row.translateLabel === false ? row.label : this.text(row.label),
+    })) ?? rows;
     const selected = dialog?.choices ? dialog.selected : this.selected;
     const start = Math.max(0, Math.min(rows.length - maxRows, selected - Math.floor(maxRows / 2)));
-    const main = [this.theme.fg('accent', this.theme.bold(safe(this.options.title) + (this.options.dirty() ? ' *' : ''))),
-      this.theme.fg('muted', safe(this.options.summary())), ''];
-    if (dialog) main.push(this.theme.fg('accent', safe(dialog.title)));
+    const main = [this.theme.fg('accent', this.theme.bold(safe(this.text(this.options.title)) + (this.options.dirty() ? ' *' : ''))),
+      this.theme.fg('muted', safe(this.text(this.options.summary()))), ''];
+    if (dialog) main.push(this.theme.fg('accent', safe(this.text(dialog.title))));
     if (dialog?.input) main.push(...dialog.input.render(inner));
-    else main.push(...rows.slice(start, start + maxRows).map((row, i) => {
+    else main.push(...displayRows.slice(start, start + maxRows).map((row, i) => {
       const text = `${i + start === selected ? '›' : ' '} ${safe(row.label)}`;
       return i + start === selected ? this.theme.fg('accent', this.theme.bold(text)) : text;
     }));
     if (!dialog?.input && rows.length > maxRows) main.push(this.theme.fg('muted', `${selected + 1}/${rows.length}`));
     main.push('');
-    if (!dialog) main.push(...wrapTextWithAnsi(safe(this.options.rows[this.selected]?.description ?? ''), inner).slice(0, 2));
-    main.push(...wrapTextWithAnsi(safe(this.status || (this.busy ? 'Aguarde… Esc cancela a operação.' : '')), inner).slice(0, 3));
-    main.push(this.theme.fg('muted', dialog ? '↑↓ escolher · Enter confirmar · Esc voltar' : '↑↓ navegar · Enter editar/abrir · Ctrl+S salvar · Esc fechar'));
+    if (!dialog) main.push(...wrapTextWithAnsi(safe(this.text(this.options.rows[this.selected]?.description ?? '')), inner).slice(0, 2));
+    main.push(...wrapTextWithAnsi(safe(this.text(this.status || (this.busy ? 'Working… press Esc to cancel.' : ''))), inner).slice(0, 3));
+    main.push(this.theme.fg('muted', this.text(dialog ? '↑↓ choose · Enter confirm · Esc back' : '↑↓ navigate · Enter edit/open · Ctrl+S save · Esc close')));
     return main.map(line => this.theme.bg('toolPendingBg', `  ${truncateToWidth(line, inner, '…', true)}  `));
   }
 }

@@ -7,13 +7,13 @@ import { readyMarker } from '../local/process.mjs';
 
 export function localError(error: unknown): VoiceError {
   const code = (error as { code?: string })?.code;
-  if (code === 'LOCAL_MODEL') return new VoiceError('LOCAL_MODEL', 'Escolha tiny, base ou small em /voice.');
-  if (code === 'CANCELLED') return new VoiceError('CANCELLED', 'Operação local cancelada.');
-  if (code === 'LOCAL_TIMEOUT') return new VoiceError('LOCAL_TIMEOUT', 'Whisper local excedeu o tempo limite; tente uma gravação menor.');
-  if (code === 'LOCAL_INFERENCE') return new VoiceError('LOCAL_INFERENCE', 'Whisper não conseguiu transcrever. Tente uma gravação menor ou repare o motor em /voice.');
-  if (code === 'LOCAL_AUDIO') return new VoiceError('LOCAL_AUDIO', 'Áudio local inválido; execute Testar microfone em /voice.');
-  if (code === 'LOCAL_INSTALL') return new VoiceError('LOCAL_INSTALL', 'Não foi possível preparar o modelo local. Confira acesso ao Hugging Face e use Preparar motor local em /voice.');
-  return new VoiceError('LOCAL_NOT_READY', 'Motor local indisponível. Abra /voice → Preparar motor local para instalar ou reparar.');
+  if (code === 'LOCAL_MODEL') return new VoiceError('LOCAL_MODEL', 'Choose tiny, base, or small in /voice.');
+  if (code === 'CANCELLED') return new VoiceError('CANCELLED', 'Local operation canceled.');
+  if (code === 'LOCAL_TIMEOUT') return new VoiceError('LOCAL_TIMEOUT', 'Local Whisper timed out; try a shorter recording.');
+  if (code === 'LOCAL_INFERENCE') return new VoiceError('LOCAL_INFERENCE', 'Whisper could not transcribe the recording. Try a shorter recording or repair the engine in /voice.');
+  if (code === 'LOCAL_AUDIO') return new VoiceError('LOCAL_AUDIO', 'Invalid local audio; run Test microphone in /voice.');
+  if (code === 'LOCAL_INSTALL') return new VoiceError('LOCAL_INSTALL', 'Could not prepare the local model. Check Hugging Face access and use Prepare model in /voice.');
+  return new VoiceError('LOCAL_NOT_READY', 'Local model is unavailable. Open /voice → Prepare model to install or repair it.');
 }
 export class LocalProvider implements TranscriptionProvider {
   readonly id = 'local';
@@ -29,7 +29,7 @@ export class LocalProvider implements TranscriptionProvider {
     catch (error) { throw localError(error); }
   }
   async transcribe(audio: RecordedAudio, options: { model: string; language: string; timeoutMs: number; signal: AbortSignal }) {
-    if (options.model !== this.model) throw new VoiceError('MODEL_MISMATCH', 'Modelo difere do motor local selecionado.');
+    if (options.model !== this.model) throw new VoiceError('MODEL_MISMATCH', 'The requested model does not match the selected local engine.');
     try {
       const result = await runLocal({ task: 'transcribe', model: this.model, path: audio.path, language: options.language }, { signal: options.signal, timeoutMs: options.timeoutMs });
       return { text: sanitizeTranscript(result.text) };

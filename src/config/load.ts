@@ -5,7 +5,7 @@ import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { defaults, mergeConfig, validateConfig, object, type VoiceConfig } from './validate.js';
 import { VoiceError } from '../core/types.js';
-import { installedDefault } from '../local/process.mjs';
+import { agentDirectory, installedDefault } from '../local/process.mjs';
 import { isLocalModel } from '../local/models.mjs';
 
 export interface LoadedConfig { config: VoiceConfig; globalPath: string; projectPath: string; ffmpegPath: string; migrated?: boolean }
@@ -33,13 +33,14 @@ function read(path: string): Record<string, unknown> {
     const text = readFileSync(path, 'utf8');
     if (Buffer.byteLength(text) > 128 * 1024) throw new Error();
     return object(JSON.parse(text));
-  } catch { throw new VoiceError('CONFIG_FILE', 'Não foi possível ler voice-control.json; verifique o JSON (limite 128 KiB).'); }
+  } catch { throw new VoiceError('CONFIG_FILE', 'Could not read voice-control.json; check the JSON (128 KiB limit).'); }
 }
 export function loadConfig(cwd: string, env: NodeJS.ProcessEnv = process.env, flags: Record<string, unknown> = {}, home = homedir()): LoadedConfig {
-  const globalPath = join(home, '.pi', 'agent', 'voice-control.json');
+  const agentDir = agentDirectory(env, home);
+  const globalPath = join(agentDir, 'voice-control.json');
   const projectPath = join(cwd, '.pi', 'voice-control.json');
   const global = migrateLegacy(read(globalPath)); const project = migrateLegacy(read(projectPath));
-  const base = mergeConfig(defaults, { transcription: { model: installedDefault(join(home, '.pi', 'agent', 'cache', 'voice-control')) } });
+  const base = mergeConfig(defaults, { transcription: { model: installedDefault(join(agentDir, 'cache', 'voice-control')) } });
   let merged = mergeConfig(mergeConfig(base, global.value), project.value);
   const overrides: Record<string, unknown> = {};
   if (env.PI_VOICE_SHORTCUT) overrides.shortcut = env.PI_VOICE_SHORTCUT;
