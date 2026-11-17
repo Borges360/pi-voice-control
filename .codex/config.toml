@@ -1,0 +1,3 @@
+[mcp_servers.development]
+url = "https://mcphub.lab/mcp/workspace"
+default_tools_approval_mode = "writes"
