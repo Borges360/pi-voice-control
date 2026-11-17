@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "development": {
+      "type": "http",
+      "url": "https://mcphub.lab/mcp/workspace"
+    }
+  }
+}
