@@ -26,6 +26,6 @@ Use this specialization for work in the Pi Voice Control repository. The shared 
 - /voice opens the panel; /voice settings is an alias. Changes remain drafts until Ctrl+S. Escape returns or discards according to the panel contract. Microphone and dictation checks are separate confirmed actions.
 - User and trusted-project settings have distinct scope. Do not alter persistent settings or model selection without explicit user action.
 - Read README.md, pi-voice-control-spec.md, docs/ARCHITECTURE.md and docs/EXTENSION_UX.md before behavior changes.
-- The declared Pi peer range is >=1.3.0 and <1.4.0. The existing Pi 1.4.0 observation is status-only and does not broaden compatibility.
-- No INTEIRO design-system role is selected. Preserve the bundled mark's separate attribution and license notice.
+- The declared Pi peer range is >=1.5.2 and <1.7.0; development, tests and the loader smoke use Pi 1.6.0.
+- No INTEIRO design-system role is selected. The panel uses the vendored terminal adapter in src/vendor/inteiro-terminal (state and keyboard only, host theme, no tokens, palette or mark); regenerate it with the IDS vendor script, never edit it by hand, and keep its notice inside src/vendor/. Preserve the bundled mark's separate attribution and license notice.
 - Context-only work uses tests/agent-context.test.mjs and .harness/project.mjs verify. Real audio, host smoke, model downloads, network, publication and remote changes require separate authorization.

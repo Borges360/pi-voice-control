@@ -2,7 +2,8 @@
   "compilerOptions": {
     "target": "ES2023", "module": "NodeNext", "moduleResolution": "NodeNext",
     "strict": true, "noUncheckedIndexedAccess": true, "declaration": true, "allowJs": true,
-    "outDir": "dist", "rootDir": ".", "skipLibCheck": true, "newLine": "lf"
+    "outDir": "dist", "rootDir": ".", "skipLibCheck": true, "newLine": "lf",
+    "rewriteRelativeImportExtensions": true
   },
   "include": ["index.ts", "src/**/*.ts", "src/local/*.mjs"]
 }

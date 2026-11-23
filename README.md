@@ -6,7 +6,7 @@ Local voice dictation for Pi Coding Agent. Press F8 to record and press it again
 
 **Status:** development release; registry availability and publication have not been verified.
 
-**Compatibility:** Node.js `>=22.19.0`; the package declares Pi SDK peer dependencies `>=1.3.0 <1.4.0`. CT52 records one offline `/voice status` observation on Pi CLI `1.4.0`; that status-only observation does not expand the declared compatibility range.
+**Compatibility:** Node.js `>=22.19.0`; the package declares Pi SDK peer dependencies `>=1.5.2 <1.7.0`; development and the automated loader smoke use Pi `1.6.0`.
 
 ## English
 
@@ -72,7 +72,7 @@ For implementation and recovery details, see [architecture](docs/ARCHITECTURE.md
 
 ### License
 
-The extension is MIT licensed; see [LICENSE](LICENSE). The bundled INTEIRO mark has separate attribution and license terms in the [asset notice](docs/assets/INTEIRO-MARK-LICENSE.txt).
+The extension is MIT licensed; see [LICENSE](LICENSE). Third-party code under `src/vendor/` keeps its own license and provenance notice in [src/vendor/THIRD_PARTY_NOTICES.md](src/vendor/THIRD_PARTY_NOTICES.md).
 
 ## Português (Brasil)
 
@@ -138,4 +138,4 @@ Para detalhes de implementação e recuperação, consulte [arquitetura](docs/AR
 
 ### Licença
 
-A extensão usa licença MIT; consulte [LICENSE](LICENSE). A marca INTEIRO incluída tem atribuição e termos de licença separados no [aviso do asset](docs/assets/INTEIRO-MARK-LICENSE.txt).
+A extensão usa licença MIT; consulte [LICENSE](LICENSE). O código de terceiros em `src/vendor/` mantém sua licença e procedência em [src/vendor/THIRD_PARTY_NOTICES.md](src/vendor/THIRD_PARTY_NOTICES.md).
