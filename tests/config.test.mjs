@@ -42,6 +42,26 @@ test('global/project/env/CLI model precedence; save contains only local settings
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test('an invalid global value masked by a project override keeps the global layer free of project values', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'voice-global-invalid-'));
+  try {
+    const agent = join(dir, 'agent'), project = join(dir, 'project');
+    await mkdir(agent, { recursive: true }); await mkdir(join(project, '.pi'), { recursive: true });
+    await writeFile(join(agent, 'voice-control.json'), JSON.stringify({ language: 'Portuguese', shortcut: 'f9', capture: { maxSeconds: 999, minMs: 500 } }));
+    await writeFile(join(project, '.pi', 'voice-control.json'), JSON.stringify({ language: 'pt', capture: { silenceRms: 0.012, maxSeconds: 60 } }));
+    const loaded = loadConfig(project, { PI_CODING_AGENT_DIR: agent }, {}, dir);
+    assert.equal(loaded.config.capture.silenceRms, 0.012); assert.equal(loaded.config.capture.maxSeconds, 60);
+    assert.equal(loaded.global.capture.silenceRms, defaults.capture.silenceRms, 'project value leaked into the global layer');
+    assert.equal(loaded.global.capture.maxSeconds, defaults.capture.maxSeconds, 'invalid global value falls back to the default');
+    assert.equal(loaded.global.language, defaults.language);
+    // Valid global values are kept.
+    assert.equal(loaded.global.shortcut, 'f9'); assert.equal(loaded.global.capture.minMs, 500);
+    assert.deepEqual(loaded.globalInvalid, ['language', 'capture.maxSeconds']);
+    assert.deepEqual(loaded.sources, { language: '.pi/voice-control.json' });
+    assert.deepEqual(validateConfig(loaded.global), loaded.global);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('legacy remote profiles are removed without rewriting files or losing other preferences', async () => {
   const root = await mkdtemp(join(tmpdir(), 'voice-migrate-'));
   try {

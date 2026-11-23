@@ -16,6 +16,27 @@ export interface LoadedConfig {
   global?: VoiceConfig;
   /** Highest-precedence source above the global file, e.g. PI_VOICE_MODEL or --voice-language. */
   sources?: Partial<Record<SettingKey, string>>;
+  /** Global-file keys that are invalid on their own (masked by an override); `global` holds defaults for them. */
+  globalInvalid?: string[];
+}
+/**
+ * The global layer alone (defaults + installed model + global file). A value that is invalid on its
+ * own falls back to the default instead of to the effective configuration, so project/env/CLI
+ * values never enter what Ctrl+S writes. Each leaf is checked against an already valid config.
+ */
+function globalLayer(base: unknown, file: Record<string, unknown>): { config: VoiceConfig; invalid: string[] } {
+  try { return { config: validateConfig(mergeConfig(base, file)), invalid: [] }; } catch { /* repair below */ }
+  let current = validateConfig(base); const invalid: string[] = [];
+  const leaves = (value: Record<string, unknown>, path: string[]): string[][] => Object.entries(value).flatMap(([key, child]) =>
+    child && typeof child === 'object' && !Array.isArray(child) && Object.keys(child).length ? leaves(child as Record<string, unknown>, [...path, key]) : [[...path, key]]);
+  for (const path of leaves(file, [])) {
+    const patch = path.reduceRight<unknown>((child, key) => ({ [key]: child }), leafValue(file, path));
+    try { current = validateConfig(mergeConfig(current, patch)); } catch { invalid.push(path.join('.')); }
+  }
+  return { config: current, invalid };
+}
+function leafValue(file: Record<string, unknown>, path: string[]): unknown {
+  return path.reduce<unknown>((value, key) => (value as Record<string, unknown>)[key], file);
 }
 /** Migrate 0.1/0.2 files in memory; Ctrl+S persists the local-only configuration. */
 export function migrateLegacy(value: Record<string, unknown>): { value: Record<string, unknown>; migrated: boolean } {
@@ -56,8 +77,7 @@ export function loadConfig(cwd: string, env: NodeJS.ProcessEnv = process.env, fl
   if (env.PI_VOICE_MODEL) overrides.transcription = { model: env.PI_VOICE_MODEL };
   merged = mergeConfig(mergeConfig(merged, overrides), flags);
   const config = validateConfig(merged);
-  let globalOnly: VoiceConfig;
-  try { globalOnly = validateConfig(mergeConfig(base, global.value)); } catch { globalOnly = structuredClone(config); }
+  const { config: globalOnly, invalid: globalInvalid } = globalLayer(base, global.value);
   const sources: Partial<Record<SettingKey, string>> = {};
   const p = project.value as { transcription?: { model?: unknown }; capture?: { deviceId?: unknown }; language?: unknown; shortcut?: unknown };
   const f = flags as { transcription?: { model?: unknown }; language?: unknown };
@@ -71,7 +91,7 @@ export function loadConfig(cwd: string, env: NodeJS.ProcessEnv = process.env, fl
   if (env.PI_VOICE_SHORTCUT) sources.shortcut = 'PI_VOICE_SHORTCUT';
   if (f.transcription && typeof f.transcription === 'object' && f.transcription.model !== undefined) sources.model = '--voice-model';
   if (f.language !== undefined) sources.language = '--voice-language';
-  return { config, global: globalOnly, sources, migrated: global.migrated || project.migrated || !!env.PI_VOICE_PROFILE, globalPath, projectPath, ffmpegPath: env.PI_VOICE_FFMPEG || 'ffmpeg' };
+  return { config, global: globalOnly, ...(globalInvalid.length ? { globalInvalid } : {}), sources, migrated: global.migrated || project.migrated || !!env.PI_VOICE_PROFILE, globalPath, projectPath, ffmpegPath: env.PI_VOICE_FFMPEG || 'ffmpeg' };
 }
 export async function saveGlobal(path: string, config: VoiceConfig): Promise<void> {
   const validated = validateConfig(config);

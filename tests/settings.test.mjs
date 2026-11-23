@@ -367,10 +367,78 @@ test('parent abort closes the panel and cancels the running operation', async ()
   } finally { await f.cleanup(); }
 });
 
+test('parent abort waits for an operation that ignores its signal; nothing writes to the UI after close', async () => {
+  const gate = deferred(); let finished = false;
+  const f = await fixture({ setup: { install: async (_model, _signal, progress) => {
+    progress('Downloading and preparing local Whisper…'); await gate.promise; finished = true; progress('late progress');
+  } } });
+  try {
+    await f.goto('install'); f.panel().handleInput(KEY.enter); await tick(); await tick();
+    assert.match(f.screen(), /Downloading and preparing local Whisper…/);
+    let returned = false; void f.task.then(() => { returned = true; });
+    f.abort.abort();
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.equal(f.closed(), true);
+    assert.equal(returned, false, 'settings() must not return while the operation still runs');
+    gate.resolve();
+    assert.equal(await f.task, undefined); assert.equal(finished, true);
+    assert.doesNotMatch(f.screen(), /late progress/); assert.deepEqual(f.notices, []);
+  } finally { await f.cleanup(); }
+});
+
+test('parent abort during the microphone test returns only after FFmpeg cleanup', async () => {
+  const started = deferred(), release = deferred(); let cancelled = false;
+  const f = await fixture({ recorder: { start: async () => {
+    started.resolve();
+    return { completed: new Promise(() => {}), stop: async () => { throw new Error('must not stop'); },
+      cancel: async () => { await release.promise; cancelled = true; } };
+  } } });
+  try {
+    await f.goto('mic-test'); await f.keys(KEY.enter, KEY.down);
+    f.panel().handleInput(KEY.enter); await started.promise; await tick();
+    let returned = false; void f.task.then(() => { returned = true; });
+    f.abort.abort();
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.equal(f.closed(), true); assert.equal(returned, false);
+    release.resolve();
+    assert.equal(await f.task, undefined); assert.equal(cancelled, true);
+  } finally { await f.cleanup(); }
+});
+
+test('help (?) shows the focused field description once, in English and Portuguese', async () => {
+  for (const [locale, snippet] of [['en', 'Tiny is lighter'], ['pt-BR', 'Tiny é mais leve']]) {
+    const f = await fixture({ rows: 80, context: { trusted: true, locale: () => locale } });
+    try {
+      await f.key('?');
+      assert.equal(f.panel().controller.help, true);
+      const s = f.screen(80);
+      assert.equal(s.split(snippet).length - 1, 1, s);
+    } finally { await f.cleanup(); }
+  }
+});
+
+test('an invalid global value masked by a project override never copies project values on Ctrl+S', async () => {
+  const f = await fixture({ loaded: async dir => {
+    await mkdir(join(dir, 'agent'), { recursive: true }); await mkdir(join(dir, 'project', '.pi'), { recursive: true });
+    await writeFile(join(dir, 'agent', 'voice-control.json'), JSON.stringify({ language: 'Portuguese', shortcut: 'f9' }));
+    await writeFile(join(dir, 'project', '.pi', 'voice-control.json'), JSON.stringify({ language: 'pt', capture: { silenceRms: 0.012 } }));
+    return loadConfig(join(dir, 'project'), { PI_CODING_AGENT_DIR: join(dir, 'agent') }, {}, dir);
+  } });
+  try {
+    assert.equal(f.loaded.config.capture.silenceRms, 0.012);
+    assert.match(f.screen(160), /The global settings file has invalid values \(language\)/);
+    await f.goto('shortcut'); await f.keys(KEY.enter, KEY.down, KEY.enter, KEY.ctrlS);
+    const saved = JSON.parse(await readFile(f.loaded.globalPath, 'utf8'));
+    assert.equal(saved.shortcut, 'f10');
+    assert.equal(saved.capture.silenceRms, defaults.capture.silenceRms);
+    assert.equal(saved.language, defaults.language);
+  } finally { await f.cleanup(); }
+});
+
 test('a save that never confirms becomes unknown; Ctrl+S reads storage instead of writing again', async () => {
-  let reads = 0;
+  let reads = 0; const hung = deferred();
   const f = await fixture({
-    setup: { ensure: () => new Promise(() => {}) },
+    setup: { ensure: () => hung.promise },
     context: { reload: () => { ++reads; return { config: structuredClone(defaults), globalPath: '', projectPath: '', ffmpegPath: 'ffmpeg' }; } },
   });
   try {
@@ -382,5 +450,8 @@ test('a save that never confirms becomes unknown; Ctrl+S reads storage instead o
     await f.key(KEY.ctrlS);
     assert.equal(reads, 1); await assert.rejects(stat(f.loaded.globalPath), { code: 'ENOENT' });
     assert.match(f.screen(110), /Voice \/ Settings \*/);
-  } finally { await f.cleanup(); }
+    // The late result settles the work; its cancelled save must still not write.
+    hung.resolve(); f.abort.abort(); await f.task;
+    await assert.rejects(stat(f.loaded.globalPath), { code: 'ENOENT' });
+  } finally { hung.resolve(); await f.cleanup(); }
 });

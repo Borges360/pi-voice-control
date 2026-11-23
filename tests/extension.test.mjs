@@ -77,7 +77,9 @@ test('/voice opens the panel without IO, gates the shortcut while open and runs 
     const settle = async () => { await component.drain(); await new Promise(r => setImmediate(r)); };
     let running = commands.get('voice').handler('', ctx); await new Promise(r => setImmediate(r));
     assert.equal(opened, 1); assert.match(component.render(80).join('\n'), /Voice \/ Settings/);
-    assert.deepEqual(input('\x1b[19~'), { consume: true }, 'F8 is gated while the panel is open');
+    assert.equal(input('\x1b[19~'), undefined, 'F8 reaches the modal panel instead of the dictation gate');
+    await shortcuts.get('f8').handler(ctx); assert.equal(opened, 1, 'the shortcut never acts while the panel is open');
+    assert.ok(!notices.some(m => /FFMPEG|Recording|busy/i.test(m)), 'no capture is attempted while the panel is open');
     await commands.get('voice').handler('settings', ctx); assert.ok(notices.includes('Configuration or diagnostics are already running.'));
     component.handleInput('\x1b'); await settle(); await running;
     running = commands.get('voice').handler('', ctx); await new Promise(r => setImmediate(r));
@@ -92,6 +94,39 @@ test('/voice opens the panel without IO, gates the shortcut while open and runs 
     for (const [i, stream] of [process.stdin, process.stdout].entries()) { if (descriptors[i]) Object.defineProperty(stream, 'isTTY', descriptors[i]); else delete stream.isTTY; }
     if (envAgent === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = envAgent;
     if (envFfmpeg === undefined) delete process.env.PI_VOICE_FFMPEG; else process.env.PI_VOICE_FFMPEG = envFfmpeg;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+test('with the shortcut on F1, F1 still opens the panel help while /voice is open', async () => {
+  const { getKeybindings } = await import('@earendil-works/pi-tui');
+  const root = await mkdtemp(resolve(tmpdir(), 'voice-panel-f1-'));
+  const descriptors = [process.stdin, process.stdout].map(s => Object.getOwnPropertyDescriptor(s, 'isTTY')); const stdoutWrite = process.stdout.write;
+  const envAgent = process.env.PI_CODING_AGENT_DIR, envShortcut = process.env.PI_VOICE_SHORTCUT;
+  const commands = new Map(), shortcuts = new Map(), handlers = new Map(); let input, component, closed;
+  const api = { registerFlag() {}, getFlag: () => undefined, registerShortcut: (k, v) => shortcuts.set(k, v), registerCommand: (k, v) => commands.set(k, v), on: (k, h) => handlers.set(k, h) };
+  const ui = {
+    notify() {}, setWidget() {}, setStatus() {}, onTerminalInput: h => { input = h; return () => {}; }, pasteToEditor() { throw new Error('Must not paste'); },
+    custom: factory => new Promise(done => { closed = done; component = factory({ terminal: { rows: 40 }, requestRender() {} }, { fg: (_c, s) => s, bold: s => s }, getKeybindings(), done); }),
+  };
+  try {
+    process.env.PI_CODING_AGENT_DIR = resolve(root, 'agent'); process.env.PI_VOICE_SHORTCUT = 'f1';
+    Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: true }); Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: true });
+    process.stdout.write = function (data, ...args) { return String(data).includes('\x1b[?1004') ? true : stdoutWrite.call(this, data, ...args); };
+    voiceControl(api); assert.ok(shortcuts.has('f1'));
+    const ctx = { cwd: root, hasUI: true, ui, sessionManager: { getSessionId: () => 's', getLeafId: () => 'l' }, isProjectTrusted: () => false };
+    await handlers.get('session_start')({}, ctx);
+    const running = commands.get('voice').handler('', ctx); await new Promise(r => setImmediate(r));
+    for (const f1 of ['\x1bOP', '\x1b[11~']) assert.equal(input(f1), undefined, `F1 ${JSON.stringify(f1)} reaches the panel`);
+    component.handleInput('\x1bOP'); await component.drain();
+    assert.equal(component.controller.help, true, 'F1 opens the panel help');
+    component.handleInput('\x1b'); await component.drain(); assert.equal(component.controller.help, false);
+    component.handleInput('\x1b'); await component.drain(); await running; assert.ok(closed);
+    await handlers.get('session_shutdown')();
+  } finally {
+    process.stdout.write = stdoutWrite;
+    for (const [i, stream] of [process.stdin, process.stdout].entries()) { if (descriptors[i]) Object.defineProperty(stream, 'isTTY', descriptors[i]); else delete stream.isTTY; }
+    if (envAgent === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = envAgent;
+    if (envShortcut === undefined) delete process.env.PI_VOICE_SHORTCUT; else process.env.PI_VOICE_SHORTCUT = envShortcut;
     await rm(root, { recursive: true, force: true });
   }
 });

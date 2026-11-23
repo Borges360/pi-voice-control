@@ -76,6 +76,18 @@ export async function settings(ui: ExtensionUIContext, loaded: LoadedConfig, rec
   setup = { ensure: ensureLocal, install: installLocal }): Promise<string | undefined> {
   const sources = loaded.sources ?? {};
   const registered = context.shortcut ?? loaded.config.shortcut;
+  /**
+   * Work started by the panel (actions, choice loading, save). The adapter stops waiting after
+   * `cancelGraceMs`, so settings() itself waits for the work to settle before returning: nothing
+   * (FFmpeg, download, Whisper) outlives the panel, /reload or session shutdown.
+   */
+  const inflight = new Set<Promise<unknown>>();
+  const track = <T>(work: Promise<T>): Promise<T> => {
+    inflight.add(work);
+    const forget = () => { inflight.delete(work); };
+    work.then(forget, forget);
+    return work;
+  };
   let locale: Locale = context.locale?.() ?? 'en';
   const t = (text: string) => translateText(text, locale);
   const busyReason = () => (context.busy ? t('stop or cancel dictation first') : undefined);
@@ -119,7 +131,7 @@ export async function settings(ui: ExtensionUIContext, loaded: LoadedConfig, rec
       // Device names are shown as reported (never translated); enumeration runs only on Enter.
       loadChoices: async op => {
         if (context.busy) throw new VoiceError('BUSY', 'Stop or cancel dictation before changing settings or running a test.');
-        const devices = await recorder.listDevices(op);
+        const devices = await track(recorder.listDevices(op));
         if (!devices.length) throw new VoiceError('NO_DEVICE', 'No microphone found. Check permissions or run /voice doctor.');
         return devices.map(d => ({ id: d.id, label: d.label }));
       },
@@ -136,7 +148,11 @@ export async function settings(ui: ExtensionUIContext, loaded: LoadedConfig, rec
       choices: [{ id: 'en', label: t('English') }, { id: 'pt-BR', label: t('Português (Brasil)') }],
       ...(context.trusted ? {} : { locked: { source: trustSource() } }) },
   ];
-  const actions = (): PanelAction[] => [
+  const actions = (): PanelAction[] => allActions().map(action => {
+    const run = action.run;
+    return run ? { ...action, run: (...args: Parameters<typeof run>) => track(run(...args)) } : action;
+  });
+  const allActions = (): PanelAction[] => [
     { id: 'connection', label: t('Check model'), disabled: busyReason, timeoutMs: 130_000,
       description: t('Loads the selected model in a separate process with network access blocked. Does not record audio.'),
       run: async (draft, op, report) => {
@@ -189,6 +205,8 @@ export async function settings(ui: ExtensionUIContext, loaded: LoadedConfig, rec
     t(`${context.state ?? 'IDLE'} · local Whisper · ${configFrom(values).transcription.model} · ${loaded.globalPath}`);
 
   const session = new SettingsSession(fields(), initial(loaded, locale), { locale, messages: messages() });
+  if (loaded.globalInvalid?.length)
+    session.setStatus(translate('settings.global.invalid', locale, { keys: loaded.globalInvalid.join(', ') }), 'warning');
   // Save progress (model download) goes to the status line; the host renderer comes from ui.custom.
   let requestRender = () => {};
   const host: PiUI = {
@@ -198,7 +216,8 @@ export async function settings(ui: ExtensionUIContext, loaded: LoadedConfig, rec
     }, options),
   };
   let migrationPending = !!loaded.migrated;
-  const persist: Persist = async (values, op) => {
+  const persist: Persist = (values, op) => track(save(values, op));
+  const save = async (values: Readonly<Values>, op: AbortSignal) => {
     if (context.busy) throw new VoiceError('BUSY', 'Stop or cancel dictation before changing settings or running a test.');
     const before = session.persisted;
     const configChanged = migrationPending || [MODEL, MICROPHONE, LANGUAGE, SHORTCUT].some(id => values[id] !== before[id]);
@@ -251,6 +270,8 @@ export async function settings(ui: ExtensionUIContext, loaded: LoadedConfig, rec
     if (result.status === 'failed') ui.notify(result.message, 'error');
     return result.status === 'succeeded' ? result.action : undefined;
   } finally {
+    // Work that ignored its AbortSignal is awaited here, so the caller's teardown really ends it.
+    while (inflight.size) await Promise.allSettled([...inflight]);
     // An unsaved language preview never outlives the panel.
     const saved = asLocale(session.persisted[UI_LOCALE]);
     if (locale !== saved) { locale = saved; context.onLocaleChange?.(saved); }

@@ -82,6 +82,7 @@ export const CATALOG = {
   'settings.cancel.value': { en: 'Discard', 'pt-BR': 'Descartar' },
   'settings.cancel.description': { en: 'Cancels the current recording/transcription and closes the panel.', 'pt-BR': 'Cancela a gravação/transcrição atual e fecha o painel.' },
   'settings.error.busy': { en: 'Stop or cancel dictation before changing settings or running a test.', 'pt-BR': 'Pare ou cancele o ditado antes de mudar as configurações ou executar um teste.' },
+  'settings.global.invalid': { en: 'The global settings file has invalid values ({keys}); Ctrl+S replaces them with defaults.', 'pt-BR': 'O arquivo de configuração global tem valores inválidos ({keys}); Ctrl+S os substitui pelos padrões.' },
   'settings.saved.overrides': { en: 'Saved. Project/env/CLI overrides keep precedence.', 'pt-BR': 'Salvo. As substituições do projeto/env/CLI continuam tendo precedência.' },
   'settings.language.transcription.invalid': { en: 'Use auto or a language code such as pt, en or es.', 'pt-BR': 'Use auto ou um código de idioma, como pt, en ou es.' },
   'settings.busy.reason': { en: 'stop or cancel dictation first', 'pt-BR': 'pare ou cancele o ditado antes' },
