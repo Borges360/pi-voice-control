@@ -111,6 +111,7 @@ export default function voiceControl(pi: ExtensionAPI): void {
             state: r.controller.state, busy: r.controller.busy, shortcut, onSaved: () => { modelOverride = undefined; },
             trusted: r.trusted, locale: r.locale, onLocaleChange: r.setLocale,
             saveLocale: next => saveProjectLocale(ctx.cwd, r.trusted, next),
+            reload: () => refresh(ctx), readLocale: () => loadProjectLocale(ctx.cwd, r.trusted),
           }); action = await setupTask as string | undefined;
         }
         else { setupTask = doctor(l, r.recorder, abort.signal, shortcut, r.locale); notify(ctx, await setupTask as string); }

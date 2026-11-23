@@ -56,7 +56,8 @@
     "benchmark": "npm run build && node scripts/benchmark.mjs",
     "prepack": "npm run build",
     "postinstall": "node scripts/setup-local.mjs",
-    "setup:local": "node scripts/setup-local.mjs"
+    "setup:local": "node scripts/setup-local.mjs",
+    "smoke:host": "node scripts/smoke-pi-host.mjs"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=1.5.2 <1.7.0",
