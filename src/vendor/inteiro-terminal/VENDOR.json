@@ -8,9 +8,9 @@
   "source": {
     "repository": "https://github.com/Borges360/ids.git",
     "path": "packages/terminal/src",
-    "commit": "f8c5ab43abf5df77eabe2e9b87b9365aecd7fb79",
-    "packageCommit": "f8c5ab43abf5df77eabe2e9b87b9365aecd7fb79",
-    "date": "2026-11-23T11:16:54.000Z",
+    "commit": "67d70e81d6872aaea75d81e2d670fc0552a8ea32",
+    "packageCommit": "67d70e81d6872aaea75d81e2d670fc0552a8ea32",
+    "date": "2026-11-23T16:33:19.000Z",
     "dirty": false
   },
   "externals": [
@@ -37,8 +37,8 @@
     {
       "path": "controller.ts",
       "upstream": "packages/terminal/src/controller.ts",
-      "upstreamSha256": "6f795a5621b6b5176212e2a216134298bdbb9a11e816f62589cc01c91a870be2",
-      "sha256": "6f795a5621b6b5176212e2a216134298bdbb9a11e816f62589cc01c91a870be2"
+      "upstreamSha256": "ec44988b7026addcfc2a0502ef841a8b41429308ed1f85d3d15cd18b4c201800",
+      "sha256": "ec44988b7026addcfc2a0502ef841a8b41429308ed1f85d3d15cd18b4c201800"
     },
     {
       "path": "errors.ts",

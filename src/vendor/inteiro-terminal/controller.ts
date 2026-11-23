@@ -1052,7 +1052,8 @@ export class PanelController {
       scope: this.scope,
       dirty: this.session.dirty,
       body,
-      help: this.focusedDescription(),
+      // Help mode already prints the full description in the body; the footer must not repeat it.
+      help: this.help ? "" : this.focusedDescription(),
       feedback: feedback.text,
       ...(feedback.kind ? { feedbackKind: feedback.kind } : {}),
       actions: ActionBar(
