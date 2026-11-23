@@ -29,3 +29,21 @@ No version bump and no publication yet.
 - `Tab` action bar (save, help, close), `/` search and help (`F1`/`?`) in the panel.
 - A save that cannot be confirmed asks to check storage (`Ctrl+S`) before writing again.
 - `npm run smoke:host`: loads the extension with the installed Pi loader and renders the panel.
+- While the panel is open, the dictation shortcut key reaches the panel instead of being swallowed,
+  so `F1` opens the panel help even when `F1` is the dictation shortcut. Dictation still cannot
+  start while the panel is open.
+- If the global file has a value that is invalid on its own but is masked by a project/env/CLI
+  value, the panel warns and `Ctrl+S` writes the default for that key. Project/env/CLI values are
+  never copied into the global file.
+
+### Removed
+
+- The unreferenced design-system mark (`docs/assets/inteiro-mark.svg`) and its attribution file are
+  no longer shipped.
+
+### Fixed
+
+- Closing the panel (`Esc`, `/reload`, session end, `/voice cancel`) again waits for a running
+  check, test, download or save to stop before `/voice` returns, so no FFmpeg, download or Whisper
+  work outlives it. 0.3.0 did this; the first adapter migration had dropped it.
+- The help screen (`?`/`F1`) shows the field description once (adapter fix, re-vendored).

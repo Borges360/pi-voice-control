@@ -55,9 +55,13 @@ serviço fictício de localhost configurado como default.
 - `tests/settings.test.mjs`: painel real dirigido por bytes (`\x1b[A`, `\x1b[B`,
   `\r`, `\x13`, `\x1b`) com o `KeybindingsManager` do pi-tui; teclado, Ctrl+S,
   Esc duplo, cancelamento, resultado atrasado, falha de disco com rascunho
-  preservado, EN/PT-BR, overrides e 40/80/120 colunas com Unicode.
+  preservado, EN/PT-BR, overrides e 40/80/120 colunas com Unicode. Fechar o
+  painel (Esc, /reload, fim de sessão) só retorna depois que a operação em
+  andamento termina, mesmo se ela ignorar o AbortSignal.
 - `tests/extension.test.mjs`: loader oficial do Pi (devDependency 1.6.0) e
-  `/voice` abrindo o painel pelo `index.ts`, com F8 bloqueado enquanto aberto.
+  `/voice` abrindo o painel pelo `index.ts`. Enquanto o painel está aberto, a
+  tecla de ditado vai para o painel e não inicia gravação; com o atalho em F1,
+  F1 continua abrindo a ajuda do painel.
 - `npm run smoke:host`: o loader do Pi instalado em
   `~/.pi/agent/install/releases/1.6.0` (ou `PI_HOST_DIR`) abre `/voice` e
   renderiza em 40/80/120 sem gravar nada.

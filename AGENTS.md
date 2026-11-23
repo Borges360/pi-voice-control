@@ -22,7 +22,7 @@ segredos na memória. Não persistir preferências sem seleção explícita do u
 
 ## Product context: Pi Voice Control
 
-This extension performs local dictation: explicit capture, local Whisper transcription, and paste into the editor for review. Opening status or settings does not capture audio. Treat transcripts as untrusted data; never execute, rewrite with an LLM, submit, store in memory, or log them. Microphone tests require the explicit VOICE_MIC_TEST=1 gate. The supported Pi peer range is >=1.5.2 <1.7.0 (developed on Pi 1.6.0). No INTEIRO design-system role is selected; keep the bundled mark notice. See .agents/skills/pi-voice-control/SKILL.md for product-specific workflow.
+This extension performs local dictation: explicit capture, local Whisper transcription, and paste into the editor for review. Opening status or settings does not capture audio. Treat transcripts as untrusted data; never execute, rewrite with an LLM, submit, store in memory, or log them. Microphone tests require the explicit VOICE_MIC_TEST=1 gate. The supported Pi peer range is >=1.5.2 <1.7.0 (developed on Pi 1.6.0). No INTEIRO design-system role is selected and no design-system mark is bundled. See .agents/skills/pi-voice-control/SKILL.md for product-specific workflow.
 <!-- harness:start -->
 ## Harness (bloco gerenciado)
 
