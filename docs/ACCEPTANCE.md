@@ -6,7 +6,8 @@ As opções HTTP/OpenRouter e os testes de adapters removidos não integram o pr
 
 ## Verificado
 
-- Windows x64, Node 24, Pi 1.3.x e FFmpeg no PATH.
+- Windows x64, Node 24, Pi 1.3.x e FFmpeg no PATH (aceite da 0.3.0; a migração
+  do painel para Pi 1.6.0 está registrada abaixo).
 - Escolha fechada tiny/base/small, com repositórios e revisões fixos.
 - Download real e carregamento offline dos três modelos no cache do usuário.
 - Modelos separados do processo do Pi; rede bloqueada durante inferência/probe.
@@ -16,7 +17,16 @@ As opções HTTP/OpenRouter e os testes de adapters removidos não integram o pr
 - Estados/corridas, fechamento/reload, processos encerrados, editor e outros widgets preservados.
 - Waveform sensível à fala baixa e às pausas, sem alteração do ganho do microfone.
 
-**58 testes de unidade aprovados** (`npm test`) e lint sem erros.
+**58 testes de unidade aprovados** (`npm test`) e lint sem erros (registro da 0.3.0).
+
+### Migração do painel (adaptador Pi vendorizado, Pi 1.6.0)
+
+Registrado em 23/11/2026, somente automatizado: `npm test` com 85 testes
+aprovados (eram 73 antes da migração), `npm run lint` sem erros e
+`npm run smoke:host` aprovado contra o loader do Pi 1.6.0 instalado (painel
+aberto por `/voice`, renderizado em 40/80/120 colunas, fechado com Esc, nada
+gravado). Os itens do roteiro humano abaixo continuam pendentes para esta versão
+do painel; não houve ensaio em Windows Terminal/ConPTY nem com hardware.
 Pacote conferido com `npm pack --dry-run`: ~71 kB, sem pesos/adapters removidos.
 Whisper tiny, base e small transcreveram o fixture português offline em processos
 separados (aprox. 4,5 s, 4,0 s e 6,8 s nesta execução; não é benchmark).
@@ -43,6 +53,9 @@ Nenhuma captura física ou envio a servidor é necessário.
 8. Observe waveform, contador e desaparecimento após sucesso/cancelamento.
 9. Teste `/voice cancel`, `/reload` e saída durante captura/transcrição; confirme limpeza.
 10. Repita com os três modelos, comparando precisão e tempo no seu equipamento.
+11. No painel: Esc com rascunho avisa e o segundo Esc descarta; Ctrl+S mantém o
+    painel aberto; o seletor Language troca o painel para PT-BR na hora; com
+    o terminal abaixo de 40×12 aparece o pedido de redimensionar.
 
 Pesos ficam em `~/.pi/agent/cache/voice-control`; Git e pacote não podem conter
 ONNX/safetensors/GGUF. Áudio/transcrição não são persistidos nesse cache.

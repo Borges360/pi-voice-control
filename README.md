@@ -39,7 +39,7 @@ Requirements: Node.js `>=22.19.0`, a Pi host in the declared peer range, and FFm
 | `/voice doctor` | Check FFmpeg, devices, and local model readiness |
 | `/voice model [tiny\|base\|small]` | List or switch the model for this session; use the panel to prepare and save it |
 
-In the panel, choose a model and press `Ctrl+S` to prepare it before saving. `Esc` returns or discards the current draft. Merely opening the panel or moving through its options does not start recording or download a model. Confirm before using **Test microphone** or **Test dictation**; those panel actions are separate from ordinary status and settings commands.
+In the panel, `↑`/`↓` move, `Enter` edits a field or runs an action, and `Ctrl+S` saves while the panel stays open; choose a model and press `Ctrl+S` to prepare it before saving. `Esc` leaves a field without applying it; with unsaved changes the first `Esc` warns and the second discards them and closes. `Esc` during a check, test, download or save cancels it. The microphone list is read only when you open the **Microphone** field. Values set by the project file, `PI_VOICE_*` or `--voice-*` show their source and are not written to the global file. Merely opening the panel or moving through its options does not start recording or download a model. Confirm before using **Test microphone** or **Test dictation**; those panel actions are separate from ordinary status and settings commands. **Start dictation** asks you to save pending changes first.
 
 ### Configuration and state
 
@@ -105,7 +105,7 @@ Requisitos: Node.js `>=22.19.0`, um host Pi na faixa declarada pelas peer depend
 | `/voice doctor` | Verifica FFmpeg, dispositivos e prontidão do modelo local |
 | `/voice model [tiny\|base\|small]` | Lista ou troca o modelo na sessão; use o painel para preparar e salvar |
 
-No painel, escolha o modelo e pressione `Ctrl+S` para prepará-lo antes de salvar. `Esc` volta ou descarta o rascunho atual. Apenas abrir o painel ou navegar pelas opções não inicia uma gravação nem baixa um modelo. **Testar microfone** e **Testar ditado** pedem confirmação e são ações separadas dos comandos comuns de estado e configuração.
+No painel, `↑`/`↓` navegam, `Enter` edita um campo ou executa uma ação e `Ctrl+S` salva mantendo o painel aberto; escolha o modelo e pressione `Ctrl+S` para prepará-lo antes de salvar. `Esc` sai de um campo sem aplicar; com alterações não salvas, o primeiro `Esc` avisa e o segundo descarta e fecha. `Esc` durante verificação, teste, download ou salvamento cancela a operação. A lista de microfones só é lida ao abrir o campo **Microfone**. Valores definidos pelo arquivo do projeto, por `PI_VOICE_*` ou por `--voice-*` mostram a origem e não são gravados no arquivo global. Apenas abrir o painel ou navegar pelas opções não inicia uma gravação nem baixa um modelo. **Testar microfone** e **Testar ditado** pedem confirmação e são ações separadas dos comandos comuns de estado e configuração. **Iniciar ditado** pede que as alterações pendentes sejam salvas antes.
 
 ### Configuração e estado
 
