@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Open source
+
+- Added `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, issue and pull request templates, and `SECURITY.md` with private vulnerability reporting.
+- README reorganized with the same sections in English and Brazilian Portuguese.
+- `package.json` declares `bugs` and `homepage`.
+
 No version bump and no publication yet.
 
 ### Changed

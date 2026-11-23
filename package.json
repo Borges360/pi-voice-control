@@ -2,8 +2,16 @@
   "name": "@borges360/pi-voice-control",
   "version": "0.3.0",
   "description": "Native Pi dictation with FFmpeg and offline Whisper tiny, base or small",
-  "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Borges360/pi-voice-control.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Borges360/pi-voice-control/issues"
+  },
+  "homepage": "https://github.com/Borges360/pi-voice-control#readme",
+  "type": "module",
   "engines": {
     "node": ">=22.19.0"
   },
@@ -13,10 +21,6 @@
     "dictation",
     "speech-to-text"
   ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Borges360/pi-voice-control.git"
-  },
   "pi": {
     "extensions": [
       "./index.ts"
