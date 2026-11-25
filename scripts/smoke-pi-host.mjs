@@ -69,7 +69,14 @@ try {
   }
   await running;
   const written = await readdir(scratch);
-  check(!written.includes('agent'), `settings were written: ${written.join(', ')}`);
+  // The only writes allowed are the design-system themes the extension installs (themes/) and their
+  // ownership record (state/); voice settings are never written by opening and closing the panel.
+  const agentEntries = written.includes('agent') ? await readdir(join(scratch, 'agent')) : [];
+  check(agentEntries.every(e => e === 'themes' || e === 'state'), `settings were written: ${agentEntries.join(', ')}`);
+  const themes = agentEntries.includes('themes') ? (await readdir(join(scratch, 'agent', 'themes'))).sort() : [];
+  check(themes.join(',') === 'inteiro-contrast-dark.json,inteiro-contrast-light.json,inteiro-dark.json,inteiro-light.json', `themes not installed: ${themes.join(', ')}`);
+  const discover = ext?.handlers.get('resources_discover') ?? [];
+  check(discover.length === 1 && (await discover[0]({}, ctx)).themePaths.length === 4, 'themes not listed in resources_discover');
   for (const handler of ext?.handlers.get('session_shutdown') ?? []) await handler({}, ctx);
   console.log(`host: ${hostDir} (pi-coding-agent ${agentVersion ?? '?'})`);
   console.log(`notifications: ${notices.length ? notices.join(' | ') : 'none'}`);
@@ -81,4 +88,4 @@ try {
   await rm(scratch, { recursive: true, force: true });
 }
 if (failures.length) { for (const f of failures) console.error(`smoke failed: ${f}`); process.exitCode = 1; }
-else console.log('smoke ok: /voice panel opened by the host loader, rendered at 40/80/120, closed with Esc, nothing written');
+else console.log('smoke ok: /voice panel opened by the host loader, rendered at 40/80/120, closed with Esc, no setting written, themes installed in the agent dir');

@@ -54,7 +54,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && node --test tests/*.test.mjs",
+    "test": "npm run build && node --import ./tests/setup-env.mjs --test tests/*.test.mjs",
     "test:integration": "npm run build && node --test tests/integration/*.test.mjs",
     "benchmark": "npm run build && node scripts/benchmark.mjs",
     "prepack": "npm run build",

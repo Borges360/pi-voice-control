@@ -90,6 +90,8 @@ Precedence, highest first:
 
 `/voice model` changes the active model for the current session only. Other environment variables: `PI_CODING_AGENT_DIR` (Pi profile directory), `PI_VOICE_FFMPEG` (FFmpeg executable) and `PI_VOICE_SKIP_LOCAL_SETUP` (defer model setup). The speech language defaults to `pt` and accepts `auto` or any language code Whisper supports.
 
+Themes: on load, the extension copies the color themes of its terminal adapter to `<agent-dir>/themes/`, so they are listed in `/settings` → **Theme**. It never changes the selected theme and never overwrites a theme file you edited. Set `PI_DESIGN_THEMES=off` to skip the copy.
+
 ### Language
 
 The speech-language setting controls transcription, not the interface. To change the interface language, open `/voice settings`, choose **Language** and preview English or Brazilian Portuguese. The choice is saved only when you press `Ctrl+S` in a trusted project, to `.pi/pi-voice-control.locale.json`. Untrusted projects stay in English. `Esc` discards an unsaved preview.
@@ -198,6 +200,8 @@ Precedência, da maior para a menor:
 6. Padrão `tiny`.
 
 `/voice model` troca o modelo ativo somente na sessão atual. Outras variáveis de ambiente: `PI_CODING_AGENT_DIR` (diretório do perfil Pi), `PI_VOICE_FFMPEG` (executável do FFmpeg) e `PI_VOICE_SKIP_LOCAL_SETUP` (adia a preparação do modelo). O idioma do ditado é `pt` por padrão e aceita `auto` ou qualquer código de idioma reconhecido pelo Whisper.
+
+Temas: ao carregar, a extensão copia os temas de cores do seu adaptador de terminal para `<agent-dir>/themes/`, e eles aparecem em `/settings` → **Theme**. Ela nunca troca o tema escolhido nem sobrescreve um arquivo de tema que você editou. Defina `PI_DESIGN_THEMES=off` para não copiar.
 
 ### Idioma
 

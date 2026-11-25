@@ -13,8 +13,11 @@ import { InputGate, normalizeFunctionKey } from './src/ui/input-gate.js';
 import { settings } from './src/ui/settings.js';
 import { doctor } from './src/ui/doctor.js';
 import { loadProjectLocale, saveProjectLocale, translateText, type Locale } from './src/i18n.js';
+import { registerInteiroPiThemes } from './src/vendor/inteiro-terminal/pi.js';
 
 export default function voiceControl(pi: ExtensionAPI): void {
+  // Makes the design-system Pi themes available in /settings: no separate install, never selects one.
+  registerInteiroPiThemes(pi);
   for (const [flag, description] of [['voice-model', 'Local Whisper model: tiny, base, or small'], ['voice-language', 'Dictation language']] as const) {
     pi.registerFlag(flag, { type: 'string', description });
   }
