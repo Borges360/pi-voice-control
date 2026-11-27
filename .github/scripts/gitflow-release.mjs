@@ -9,7 +9,7 @@
 // Nunca integra PR: o merge continua humano. Não faz deploy (Jenkins) nem publica pacote.
 // Distribuído pelo harness como .github/scripts/gitflow-release.mjs, ao lado de version.mjs.
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { applyVersion, findVersionFile, parseCommit, planVersion, releaseCommitVersion } from "./version.mjs";
@@ -50,7 +50,8 @@ export function createApi({ base, repo, token, fetchImpl = globalThis.fetch }) {
     createPull: (baseRef, head, title, body) => call("POST", `/repos/${repo}/pulls`, { base: baseRef, head, title, body }),
     updatePull: (number, fields) => call("PATCH", `/repos/${repo}/pulls/${number}`, fields),
     createRelease: (tag, body, target) => call("POST", `/repos/${repo}/releases`, { tag_name: tag, name: tag, body, target_commitish: target }),
-    dispatch: (workflow, ref) => call("POST", `/repos/${repo}/actions/workflows/${workflow}/dispatches`, { ref })
+    pendingRuns: async (sha) => (await call("GET", `/repos/${repo}/actions/runs?head_sha=${sha}&status=action_required&per_page=100`))?.workflow_runs ?? [],
+    approveRun: (id) => call("POST", `/repos/${repo}/actions/runs/${id}/approve`)
   };
 }
 
@@ -93,7 +94,9 @@ export function topicTitle(commits, ref) {
   return valid.find((c) => RANK[c.bump] === top).header;
 }
 
-export async function run({ dir, ref, env = process.env, git = createGit(dir), api, log = console.log }) {
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export async function run({ dir, ref, env = process.env, git = createGit(dir), api, log = console.log, sleep = wait }) {
   const cfg = loadConfig(dir);
   const onGitea = env.GITEA_ACTIONS === "true";
   git("fetch", "--force", "--tags", "--quiet", "origin",
@@ -104,19 +107,26 @@ export async function run({ dir, ref, env = process.env, git = createGit(dir), a
   const result = { ref, actions: [] };
   const act = (action, detail = {}) => { result.actions.push({ action, ...detail }); log(`${action} ${JSON.stringify(detail)}`); };
 
-  // Sem PR aberto por usuário: PR criado com o token do Actions não dispara os checks de
-  // pull_request no GitHub; os workflows com workflow_dispatch são disparados no head.
-  const dispatchChecks = async (head) => {
+  // PR aberto (ou branch atualizada) com o token do Actions: no GitHub as execuções de
+  // pull_request ficam em action_required e os checks obrigatórios não rodam. A automação aprova
+  // as execuções pendentes do próprio SHA (as de workflow_dispatch não contam para o PR).
+  const approveChecks = async (branch) => {
     if (onGitea) return;
-    const wfDir = join(dir, ".github", "workflows");
-    if (!existsSync(wfDir)) return;
-    for (const name of readdirSync(wfDir).filter((f) => /\.ya?ml$/.test(f) && f !== "release.yml")) {
-      const text = readFileSync(join(wfDir, name), "utf8");
-      if (!/^\s*pull_request:/m.test(text)) continue;
-      if (!/^\s*workflow_dispatch:/m.test(text)) { act("check-sem-dispatch", { workflow: name }); continue; }
-      try { await api.dispatch(name, head); act("check-disparado", { workflow: name, ref: head }); }
-      catch (error) { act("check-falhou", { workflow: name, reason: error.message }); }
+    const sha = (git.try("ls-remote", "--heads", "origin", branch) ?? "").split(/\s+/)[0];
+    if (!sha) return;
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      let runs;
+      try { runs = await api.pendingRuns(sha); } catch (error) { act("checks-falhou", { reason: error.message }); return; }
+      if (runs.length) {
+        for (const r of runs) {
+          try { await api.approveRun(r.id); act("check-aprovado", { workflow: r.name, run: r.id }); }
+          catch (error) { act("check-aprovacao-negada", { workflow: r.name, reason: error.message }); }
+        }
+        return;
+      }
+      await sleep(5000);
     }
+    act("checks-sem-pendencia", { sha: sha.slice(0, 12) });
   };
   const ensurePr = async (base, head, title, body, { refreshBody = false } = {}) => {
     const open = await api.openPulls();
@@ -130,7 +140,7 @@ export async function run({ dir, ref, env = process.env, git = createGit(dir), a
     }
     const pr = await api.createPull(base, head, title, body);
     act("pr-aberto", { number: pr.number, base, head, title });
-    await dispatchChecks(head);
+    await approveChecks(head);
     return { number: pr.number, created: true };
   };
   const backMerge = async (version) => {
@@ -212,13 +222,14 @@ export async function run({ dir, ref, env = process.env, git = createGit(dir), a
     const body = [MARKER, `Release **${version}** (${plan.current} → ${version}, ${plan.bump}), calculada pelos Conventional Commits de \`${cfg.develop}\`.`,
       "", notes, "", `Ao integrar em \`${cfg.main}\`, a automação cria a tag \`v${version}\`, a release e o PR de retorno para \`${cfg.develop}\`.`].join("\n");
     const pr = await ensurePr(cfg.main, branch, `chore(release): ${version}`, body, { refreshBody: true });
-    if (pushed && !pr.created) await dispatchChecks(branch);
+    if (pushed && !pr.created) await approveChecks(branch);
     git("checkout", "--quiet", "--detach", head);
     return result;
   }
 
   if (ref.startsWith("hotfix/") || ref.startsWith("release/")) {
     let title = ref.startsWith("release/") ? `chore(release): ${ref.slice("release/".length)}` : null;
+    let bumped = false;
     if (ref.startsWith("hotfix/")) {
       const plan = planVersion(dir, { ref: "HEAD", baseline: cfg.baseline });
       if (plan.ok && plan.status === "release") {
@@ -230,7 +241,7 @@ export async function run({ dir, ref, env = process.env, git = createGit(dir), a
           git(...BOT, "commit", "--quiet", "-m", title);
           git("push", "--quiet", "origin", `HEAD:refs/heads/${ref}`);
           act("versao-gravada", { file: applied.file, from: applied.from, to: applied.to });
-          await dispatchChecks(ref);
+          bumped = true;
         }
       } else act("sem-versao", { status: plan.status, reason: plan.reason ?? null });
       title ??= `fix: ${ref.slice("hotfix/".length)}`;
@@ -238,7 +249,8 @@ export async function run({ dir, ref, env = process.env, git = createGit(dir), a
     const head = git("rev-parse", "HEAD");
     const commits = commitsIn(git, `${remote(cfg.main)}..${head}`);
     if (!commits.length) { act("sem-commits", { base: cfg.main }); return result; }
-    await ensurePr(cfg.main, ref, title, [MARKER, `\`${ref}\` → \`${cfg.main}\`. Depois do merge, o retorno para \`${cfg.develop}\` é aberto automaticamente.`, "", releaseNotes(commits)].join("\n"));
+    const pr = await ensurePr(cfg.main, ref, title, [MARKER, `\`${ref}\` → \`${cfg.main}\`. Depois do merge, o retorno para \`${cfg.develop}\` é aberto automaticamente.`, "", releaseNotes(commits)].join("\n"));
+    if (bumped && !pr.created) await approveChecks(ref);
     return result;
   }
 
