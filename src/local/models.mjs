@@ -9,6 +9,6 @@ export const LOCAL_MODELS = Object.freeze({
 export function isLocalModel(value) { return typeof value === 'string' && Object.hasOwn(LOCAL_MODELS, value); }
 /** @param {unknown} name */
 export function modelInfo(name) {
-  if (!isLocalModel(name)) throw Object.assign(new Error('Modelo local inválido: use tiny, base ou small.'), { code: 'LOCAL_MODEL' });
+  if (!isLocalModel(name)) throw Object.assign(new Error('Invalid local model; use tiny, base, or small.'), { code: 'LOCAL_MODEL' });
   return LOCAL_MODELS[name];
 }

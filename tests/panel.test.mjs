@@ -12,7 +12,7 @@ function fixture(activate,save=async()=>{}) {
 }
 test('Ctrl+S while editing commits the field then saves; failure remains recoverable',async()=>{
   let value='pt',saved='',attempts=0;
-  const f=fixture(async p=>{const result=await p.input('Idioma',value);if(result!==undefined)value=result;},async p=>{++attempts;if(attempts===1)throw Error('upstream private payload');saved=value;p.report('Salvo.');});
+  const f=fixture(async p=>{const result=await p.input('Transcription language',value);if(result!==undefined)value=result;},async p=>{++attempts;if(attempts===1)throw Error('upstream private payload');saved=value;p.report('Saved.');});
   f.panel.handleInput('\r');await tick();f.panel.handleInput('\x15');f.panel.handleInput('en');f.panel.handleInput('\x13');await f.panel.drain();
   assert.equal(value,'en');assert.equal(saved,'');assert.ok(!f.panel.render(80).join('\n').includes('private payload'));
   f.panel.handleInput('\x13');await f.panel.drain();assert.equal(saved,'en');assert.equal(f.closed(),0);f.panel.dispose();
@@ -27,5 +27,5 @@ test('parent abort closes panel and drains a late operation without late UI writ
 test('Esc cancels a running action; its late success never replaces cancellation',async()=>{
   const result=deferred();const f=fixture(async p=>{await result.promise;p.report('late success');});
   f.panel.handleInput('\r');await tick();f.panel.handleInput('\x1b');result.resolve();await f.panel.drain();
-  assert.match(f.panel.render(80).join('\n'),/Operação cancelada/);assert.ok(!f.panel.render(80).join('\n').includes('late success'));assert.equal(f.closed(),0);f.panel.dispose();
+  assert.match(f.panel.render(80).join('\n'),/Operation canceled/);assert.ok(!f.panel.render(80).join('\n').includes('late success'));assert.equal(f.closed(),0);f.panel.dispose();
 });

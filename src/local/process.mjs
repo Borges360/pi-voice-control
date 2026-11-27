@@ -1,10 +1,13 @@
 import { fork } from 'node:child_process';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { modelInfo, isLocalModel } from './models.mjs';
 import { readFileSync } from 'node:fs';
 
-export const localCache = () => join(homedir(), '.pi', 'agent', 'cache', 'voice-control');
+export function agentDirectory(env = process.env, home = homedir()) {
+  return resolve(env.PI_CODING_AGENT_DIR || join(home, '.pi', 'agent'));
+}
+export const localCache = (env = process.env, home = homedir()) => join(agentDirectory(env, home), 'cache', 'voice-control');
 /** @param {string} cacheDir @returns {import('./models.mjs').LocalModel} */
 export function installedDefault(cacheDir = localCache()) {
   try { const name = JSON.parse(readFileSync(join(cacheDir, 'default-model.json'), 'utf8')).model; if (isLocalModel(name)) return name; } catch {}

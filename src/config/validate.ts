@@ -15,7 +15,7 @@ export const defaults: VoiceConfig = {
   transcription: { model: 'tiny', timeoutMs: 120_000, autoSubmit: false },
   privacy: { retainAudio: false, retainTranscripts: false, telemetry: false },
 };
-const bad = (key: string): never => { throw new VoiceError('CONFIG', `Configuração inválida: ${key}.`); };
+const bad = (key: string): never => { throw new VoiceError('CONFIG', `Invalid configuration: ${key}.`); };
 export function object(value: unknown, key = 'root'): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) bad(key);
   return value as Record<string, unknown>;

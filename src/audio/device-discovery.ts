@@ -3,9 +3,9 @@ import type { AudioDevice } from '../core/types.js';
 import { VoiceError } from '../core/types.js';
 
 export function hostWarning(env = process.env, platform = process.platform): string | undefined {
-  if (env.SSH_CONNECTION || env.SSH_TTY) return 'Pi está em SSH: o microfone pertence ao host remoto. Execute Pi no Windows do microfone.';
-  if (env.WSL_DISTRO_NAME || env.WSL_INTEROP) return 'Pi está em WSL: confirme um source PulseAudio acessível ou execute Pi nativo no Windows.';
-  if (env.CONTAINER || env.container || (platform === 'linux' && env.KUBERNETES_SERVICE_HOST)) return 'Contêiner precisa de dispositivo/source de áudio explícito; nenhum bridge é instalado.';
+  if (env.SSH_CONNECTION || env.SSH_TTY) return 'Pi is running over SSH: the microphone belongs to the remote host. Run Pi on the Windows machine with the microphone.';
+  if (env.WSL_DISTRO_NAME || env.WSL_INTEROP) return 'Pi is running in WSL: make an accessible PulseAudio source available or run Pi natively on Windows.';
+  if (env.CONTAINER || env.container || (platform === 'linux' && env.KUBERNETES_SERVICE_HOST)) return 'The container needs an explicit audio device/source; no audio bridge is installed.';
   return undefined;
 }
 export async function probeProcess(executable: string, args: string[], signal?: AbortSignal, timeoutMs = 5000): Promise<{ text: string; code: number | null }> {
@@ -18,11 +18,11 @@ export async function probeProcess(executable: string, args: string[], signal?: 
     const abort = () => { child.kill('SIGKILL'); };
     const timer = setTimeout(() => { timedOut = true; abort(); }, timeoutMs);
     signal?.addEventListener('abort', abort, { once: true });
-    child.once('error', () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(new VoiceError('FFMPEG_MISSING', 'FFmpeg não encontrado ou não executável; defina PI_VOICE_FFMPEG.')); });
+    child.once('error', () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(new VoiceError('FFMPEG_MISSING', 'FFmpeg was not found or is not executable; set PI_VOICE_FFMPEG.')); });
     child.once('close', code => {
       clearTimeout(timer); signal?.removeEventListener('abort', abort);
-      if (signal?.aborted) reject(new VoiceError('CANCELLED', 'Diagnóstico cancelado.'));
-      else if (timedOut) reject(new VoiceError('DEVICE_TIMEOUT', 'Enumeração de dispositivos excedeu o tempo limite.'));
+      if (signal?.aborted) reject(new VoiceError('CANCELLED', 'Diagnostics canceled.'));
+      else if (timedOut) reject(new VoiceError('DEVICE_TIMEOUT', 'Device enumeration timed out.'));
       else resolve({ text, code });
     });
   });

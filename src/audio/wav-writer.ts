@@ -31,14 +31,14 @@ export class WavWriter {
     let offset = 0;
     while (offset < data.length) {
       const { bytesWritten } = await this.handle.write(data, offset, data.length - offset, 44 + this.bytes + offset);
-      if (!bytesWritten) throw new VoiceError('DISK', 'Falha ao gravar áudio temporário.');
+      if (!bytesWritten) throw new VoiceError('DISK', 'Could not write temporary audio.');
       offset += bytesWritten;
     }
     this.bytes += data.length;
     return this.bytes < this.maxBytes;
   }
   async finish(peakRms: number): Promise<RecordedAudio> {
-    if (this.closed) throw new VoiceError('CAPTURE_CLOSED', 'Captura já finalizada.');
+    if (this.closed) throw new VoiceError('CAPTURE_CLOSED', 'Capture has already finished.');
     // A pipe may end on an odd byte; a WAV must contain whole int16 samples.
     this.bytes -= this.bytes % 2;
     await this.handle.truncate(44 + this.bytes);

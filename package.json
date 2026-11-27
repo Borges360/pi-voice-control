@@ -45,7 +45,8 @@
     "!**/*.safetensors",
     "!**/*.gguf",
     "!**/*.ggml",
-    "!**/pytorch_model*.bin"
+    "!**/pytorch_model*.bin",
+    "docs/assets"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",

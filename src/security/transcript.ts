@@ -1,6 +1,6 @@
 import { VoiceError } from '../core/types.js';
 export function sanitizeTranscript(value: unknown): string {
-  if (typeof value !== 'string' || value.length > 100_000) throw new VoiceError('RESPONSE_TEXT', 'Resposta STT inválida ou longa demais.');
+  if (typeof value !== 'string' || value.length > 100_000) throw new VoiceError('RESPONSE_TEXT', 'STT response is invalid or too long.');
   return value
     .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')

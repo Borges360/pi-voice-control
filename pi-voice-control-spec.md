@@ -13,6 +13,10 @@ Essa emenda substitui RF-04, seleção de provedor/endpoint e aceite local/remot
 nos contratos anteriores. Documentos abaixo ficam como registro histórico;
 README, schema e esta emenda descrevem o produto atual.
 
+Configuração global, cache do modelo e preparação na instalação seguem o
+diretório de agente configurado pelo Pi (`PI_CODING_AGENT_DIR`); sem essa
+variável, usam `~/.pi/agent`.
+
 ## Emenda de produto — 0.2 (2026-10-20)
 
 Por solicitação do usuário, o comando raiz abre painel interativo com rascunho,

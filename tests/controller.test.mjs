@@ -6,11 +6,11 @@ import { fakeCapture, configuration, deferred, tick } from './helpers.mjs';
 
 function fixture(overrides = {}, transcribe = async () => ({ text: 'Olá Kubernetes!' })) {
   const fake = fakeCapture(overrides); const states = [], pastes = [], notices = [];
-  let calls = 0;
+  let calls = 0, targetId = 'main-editor:session-a:leaf-a';
   const c = new VoiceController(fake.recorder, () => ({ transcribe: (...args) => { ++calls; return transcribe(...args); } }), {
-    update: v => states.push(v.state), paste: t => pastes.push(t), notify: m => notices.push(m),
+    update: v => states.push(v.state), paste: t => pastes.push(t), getTargetId: () => targetId, notify: m => notices.push(m),
   });
-  return { c, fake, states, pastes, notices, providerCalls: () => calls };
+  return { c, fake, states, pastes, notices, providerCalls: () => calls, setTargetId: value => { targetId = value; } };
 }
 test('success transitions and concurrent stop produce exactly one paste', async () => {
   const f = fixture(); await f.c.start(configuration());
@@ -56,6 +56,19 @@ test('late STT result cannot paste, hide or unlock the next recording', async ()
   result.resolve({ text: 'late' }); await first; assert.deepEqual(f.pastes, []); assert.equal(f.c.state, 'RECORDING');
   await f.c.dispose();
 });
+for (const [change, nextTarget] of [['session', 'main-editor:session-b:leaf-a'], ['branch', 'main-editor:session-a:leaf-b']]) {
+  test(`late STT result is discarded when the ${change} changes`, async () => {
+    const result = deferred(); const f = fixture({}, () => result.promise);
+    await f.c.start(configuration()); const stopping = f.c.stop(); await tick();
+    f.setTargetId(nextTarget);
+    result.resolve({ text: 'belongs to the previous target' }); await stopping;
+    assert.deepEqual(f.pastes, []);
+    assert.ok(f.notices.some(message => message.includes('target changed')));
+    assert.ok(f.fake.calls.cleanup);
+    assert.equal(f.c.state, 'IDLE');
+  });
+}
+
 test('unsupported model rejected before opening the microphone', async () => {
   const f = fixture(); const c = configuration(); c.transcription.model = 'https://example.com/model';
   await f.c.start(c); assert.equal(f.fake.calls.start, 0); assert.ok(f.notices.some(m => m.includes('CONFIG'))); assert.equal(f.c.state, 'IDLE');
@@ -69,7 +82,7 @@ test('natural capture end automatically finalizes', async () => {
 test('unavailable STT is detected before microphone opens; cancelled preflight ignores late success',async()=>{
   const fake=fakeCapture(); const notices=[]; const ready=deferred(); let fail=true;
   const provider={ prepare:async()=>{if(fail) throw new VoiceError('LOCAL_NOT_READY','Modelo ausente.'); await ready.promise;},transcribe:async()=>({text:'unexpected'}) };
-  const c=new VoiceController(fake.recorder,()=>provider,{update(){},paste(){throw new Error('No paste expected');},notify:m=>notices.push(m)});
+  const c=new VoiceController(fake.recorder,()=>provider,{update(){},paste(){throw new Error('No paste expected');},getTargetId:()=> 'target',notify:m=>notices.push(m)});
   await c.start(configuration()); assert.equal(fake.calls.start,0); assert.ok(notices.some(m=>m.includes('LOCAL_NOT_READY'))); assert.equal(c.state,'IDLE');
   fail=false; const start=c.start(configuration()); const cancel=c.cancel(); ready.resolve(); await start; await cancel;
   assert.equal(fake.calls.start,0); assert.equal(c.state,'IDLE'); await c.dispose();
