@@ -52,7 +52,7 @@ export function runLocal(job, options) {
     };
     child.on('message', message => {
       if (!message || typeof message !== 'object') return;
-      if (message.kind === 'progress') { try { options.onProgress?.('Baixando e preparando Whisper local…'); } catch {} return; }
+      if (message.kind === 'progress') { try { options.onProgress?.('Downloading and preparing local Whisper…'); } catch {} return; }
       if (message.kind === 'result') result = { ...(typeof message.text === 'string' && message.text.length <= 100_000 ? { text: message.text } : {}) };
       if (message.kind === 'error') {
         fault = failure(['LOCAL_NOT_READY', 'LOCAL_AUDIO', 'LOCAL_INSTALL', 'LOCAL_INFERENCE', 'LOCAL_MODEL'].includes(message.code) ? message.code : 'LOCAL_PROCESS');

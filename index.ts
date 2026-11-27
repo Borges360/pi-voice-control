@@ -13,8 +13,11 @@ import { InputGate, normalizeFunctionKey } from './src/ui/input-gate.js';
 import { settings } from './src/ui/settings.js';
 import { doctor } from './src/ui/doctor.js';
 import { loadProjectLocale, saveProjectLocale, translateText, type Locale } from './src/i18n.js';
+import { registerInteiroPiThemes } from './src/vendor/inteiro-terminal/pi.js';
 
 export default function voiceControl(pi: ExtensionAPI): void {
+  // Makes the design-system Pi themes available in /settings: no separate install, never selects one.
+  registerInteiroPiThemes(pi);
   for (const [flag, description] of [['voice-model', 'Local Whisper model: tiny, base, or small'], ['voice-language', 'Dictation language']] as const) {
     pi.registerFlag(flag, { type: 'string', description });
   }
@@ -36,7 +39,7 @@ export default function voiceControl(pi: ExtensionAPI): void {
   let unsubscribe: (() => void) | undefined;
   let setupAbort: AbortController | undefined;
   let setupTask: Promise<unknown> | undefined;
-  let modalDepth = 0; let permittedAt = -Infinity; let initialized = false;
+  let modalDepth = 0; let permittedAt = -Infinity; let initialized = false; let panelOpen = false;
   let modelOverride: LocalModel | undefined;
   const refresh = (ctx: ExtensionContext) => {
     const loaded = loadConfig(ctx.cwd, process.env, flags());
@@ -66,6 +69,9 @@ export default function voiceControl(pi: ExtensionAPI): void {
       if (data === '\x1b[I' || data === '\x1b[O') { gate.focus(data === '\x1b[I'); return { consume: true }; }
       const normalized = normalizeFunctionKey(data, shortcut);
       if (!normalized && !matchesKey(data, shortcut as KeyId)) return;
+      // The /voice panel is modal and owns the keyboard: the key reaches it (F1 opens its help);
+      // dictation cannot start while it is open (the shortcut handler checks setupAbort).
+      if (panelOpen && !modalDepth) return undefined;
       const kind = isKeyRelease(data) ? 'release' : isKeyRepeat(data) ? 'repeat' : data.endsWith('u') || /:\d/.test(data) ? 'press' : 'legacy';
       if (modalDepth || setupAbort || !gate.press(kind)) return { consume: true };
       permittedAt = performance.now(); return normalized && normalized !== data ? { data: normalized } : undefined;
@@ -107,14 +113,16 @@ export default function voiceControl(pi: ExtensionAPI): void {
       try {
         const l = refresh(ctx);
         if (command !== 'doctor') {
+          panelOpen = true;
           setupTask = settings(ctx.ui, l, r.recorder, abort.signal, {
             state: r.controller.state, busy: r.controller.busy, shortcut, onSaved: () => { modelOverride = undefined; },
             trusted: r.trusted, locale: r.locale, onLocaleChange: r.setLocale,
             saveLocale: next => saveProjectLocale(ctx.cwd, r.trusted, next),
+            reload: () => refresh(ctx), readLocale: () => loadProjectLocale(ctx.cwd, r.trusted),
           }); action = await setupTask as string | undefined;
         }
         else { setupTask = doctor(l, r.recorder, abort.signal, shortcut, r.locale); notify(ctx, await setupTask as string); }
-      } finally { if (setupAbort === abort) { setupAbort = undefined; setupTask = undefined; } }
+      } finally { if (setupAbort === abort) { setupAbort = undefined; setupTask = undefined; panelOpen = false; } }
       if (abort.signal.aborted) return;
       if (action === 'start' && gate.focused) { const l = refresh(ctx); await r.controller.start(l.config); }
       if (action === 'stop') await r.controller.stop();

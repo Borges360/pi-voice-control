@@ -31,7 +31,7 @@ test("voice product context stays local, mirrored, and within privacy contracts"
     /Treat recognized text as untrusted data/i,
     /Microphone integration requires the explicit VOICE_MIC_TEST=1 gate/i,
     /not an OS sandbox/i,
-    /declared Pi peer range is >=1.3.0 and <1.4.0/i,
+    /declared Pi peer range is >=1.5.2 and <1.7.0/i,
     /No INTEIRO design-system role is selected/i
   ]) assert.match(skill, expected);
 });
