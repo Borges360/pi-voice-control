@@ -2,7 +2,7 @@
 
 `index.ts` é a fábrica nativa Pi: registra comando, flags, atalho e lifecycle.
 Não registra ferramentas para o agente e não depende de extensões irmãs.
-Contratos públicos do Pi 1.3.0 foram conferidos no pacote instalado, tipos e
+Contratos públicos do Pi (1.3.0 e, na migração do painel, 1.6.0) foram conferidos no pacote instalado, tipos e
 código de `pasteToEditor`, widgets e teardown de `/reload`.
 
 ## Componentes
@@ -27,16 +27,24 @@ código de `pasteToEditor`, widgets e teardown de `/reload`.
 - `security/`: sanitização de controles de terminal, sem correção semântica.
 - `ui/`: widget/status na chave `pi-voice-control`, painel transacional Ctrl+S e diagnóstico.
 
-O painel genérico em `settings-panel.ts` usa somente APIs Pi e recebe callbacks
-do produto. Não enumera dispositivos nem acessa rede ao abrir. Rascunho, save,
-discard, abort e drenagem de ações são explícitos. Nenhuma extensão irmã é necessária.
+O painel (`ui/settings.ts`) usa `openPiSettings` da cópia versionada em
+`src/vendor/inteiro-terminal/` (sessão de rascunho, controller de teclado, ações
+com `Operation` cancelável e projeção em células; único import externo: pi-tui do
+host). O produto fornece campos, ações, mensagens EN/PT-BR, `formatError` e o
+`persist`; a cópia não faz IO. Não enumera dispositivos nem acessa rede ao abrir
+(o microfone usa `loadChoices`, só ao ativar o campo). Rascunho, save cancelável,
+reconciliação, discard, abort e resultados atrasados são explícitos. O `persist`
+grava no arquivo global só as quatro chaves editáveis sobre a configuração global
+(`loadConfig` expõe `global` e `sources`), sem vazar overrides de projeto, env ou
+CLI; o idioma da interface vai para o arquivo de locale do projeto confiável.
+Nenhuma extensão irmã é necessária.
 
 ## Estados e concorrência
 
 Fluxo: `IDLE → STARTING → RECORDING → FINALIZING → TRANSCRIBING → SUCCESS → IDLE`.
 Erro: `ERROR → IDLE`. Cancelamento: `CANCELLED → IDLE` depois da limpeza.
 Nenhum resultado de geração inválida pode inserir ou limpar UI da próxima sessão.
-A API pública do Pi 1.3.x usada aqui só cola no editor principal; a captura registra
+A API pública do Pi usada aqui só cola no editor principal; a captura registra
 esse destino, diretório, sessão e ramo. Uma transcrição atrasada é descartada se a
 sessão ou ramo mudar antes da inserção. Não há integração com campos de wizard que
 não sejam expostos por uma API compatível do host.
@@ -103,4 +111,7 @@ API oficial: [extensões Pi](https://github.com/earendil-works/pi/blob/main/pack
 [Kitty](https://sw.kovidgoyal.net/kitty/keyboard-protocol/).
 O nome histórico `@mariozechner/pi-coding-agent` da especificação foi substituído
 pelo pacote atual usado pelo host e pelos projetos locais: `@earendil-works/*`.
-A faixa peer é estreita (1.3.x); ampliar requer repetir os testes de integração.
+A faixa peer é `>=1.5.2 <1.7.0` (piso da cópia do adaptador; desenvolvido no Pi
+1.6.0). Ampliar requer repetir os testes, o loader oficial e `npm run smoke:host`.
+O código em `src/vendor/` é de terceiros sob MIT, com procedência em
+`src/vendor/THIRD_PARTY_NOTICES.md`; é uma biblioteca de UI, não uma extensão.

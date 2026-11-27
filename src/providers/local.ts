@@ -44,7 +44,7 @@ export async function ensureLocal(model: LocalModel, signal: AbortSignal, onProg
   try { await new LocalProvider(model).prepare(signal); }
   catch (error) {
     if (!(error instanceof VoiceError) || error.code !== 'LOCAL_NOT_READY') throw error;
-    onProgress?.(`Baixando Whisper ${model} (~${modelInfo(model).sizeMB} MB)…`);
+    onProgress?.(`Downloading Whisper ${model} (~${modelInfo(model).sizeMB} MB)…`);
     await installLocal(model, signal, onProgress);
   }
 }

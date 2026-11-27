@@ -1,174 +1,457 @@
+// Drives the real /voice panel (vendored Pi settings adapter) by terminal bytes, with the real
+// pi-tui KeybindingsManager. No microphone, FFmpeg, network or model download is used.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rmdir, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rmdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { getKeybindings, visibleWidth } from '@earendil-works/pi-tui';
 import { settings } from '../dist/src/ui/settings.js';
 import { defaults } from '../dist/src/config/validate.js';
+import { loadConfig } from '../dist/src/config/load.js';
 import { VoiceError } from '../dist/src/core/types.js';
 import { loadProjectLocale, LocaleSaveError, saveProjectLocale } from '../dist/src/i18n.js';
-import { matchesKey, visibleWidth } from '@earendil-works/pi-tui';
-import { tick } from './helpers.mjs';
+import { deferred, tick } from './helpers.mjs';
 
-const theme = { fg: (_c,s) => s, bg: (_c,s) => s, bold: s => s };
-const keys = { matches: (data, key) => matchesKey(data, ({ 'tui.select.confirm':'enter', 'tui.select.cancel':'escape', 'tui.select.up':'up', 'tui.select.down':'down' })[key]) };
-async function fixture(setupOverride = {}, settingsContext = {}) {
+const KEY = { up: '\x1b[A', down: '\x1b[B', enter: '\r', esc: '\x1b', ctrlS: '\x13', ctrlU: '\x15' };
+const plain = { fg: (_c, s) => s, bold: s => s };
+const ORDER = ['model', 'microphone', 'language', 'shortcut', 'interface-language',
+  'connection', 'install', 'mic-test', 'stt-test', 'doctor', 'start', 'cancel'];
+const position = id => ORDER.indexOf(id === 'stop' ? 'start' : id);
+
+async function fixture({ setup = {}, context = {}, recorder = {}, loaded: makeLoaded, rows = 30 } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'voice-settings-test-'));
-  const loaded = { config:structuredClone(defaults), globalPath:join(dir,'voice.json'), projectPath:join(dir,'project.json'), ffmpegPath:'ffmpeg' };
-  let panel, enumerated = 0; const abort = new AbortController();
-  const recorder = { listDevices:async () => { ++enumerated; return [{ id:'Mic José',label:'Mic José' }]; }, start:async () => { throw new Error('Opening the menu must not record'); } };
-  const ui = { custom:async factory => new Promise(resolve => { panel = factory({ terminal:{ rows:26 }, requestRender(){} },theme,keys,resolve); }), notify(){}, setWidget(){}, setStatus(){} };
-  const prepared = [];
-  const setup = { ensure:async model => { prepared.push(model); }, install:async model => { prepared.push(model); }, ...setupOverride };
-  const task = settings(ui,loaded,recorder,abort.signal,settingsContext,setup); await tick();
-  const key = async data => { panel.handleInput(data); await tick(); };
-  const down = async count => { for (let i=0;i<count;++i) await key('\x1b[B'); };
-  return { loaded, task, key, down, panel, prepared, enumerated:() => enumerated, cleanup:async () => { abort.abort(); await task; await rm(dir,{ recursive:true,force:true }); } };
+  const loaded = makeLoaded ? await makeLoaded(dir)
+    : { config: structuredClone(defaults), globalPath: join(dir, 'voice.json'), projectPath: join(dir, 'project.json'), ffmpegPath: 'ffmpeg' };
+  let panel, enumerated = 0, captured = 0, closed = false; const notices = [], overlays = [];
+  const abort = new AbortController();
+  const rec = {
+    listDevices: async () => { ++enumerated; return [{ id: 'Mic José', label: 'Mic José' }, { id: 'usb', label: 'マイク USB 🎙️ Microphone (Realtek High Definition Audio)' }]; },
+    start: async () => { ++captured; throw new Error('Opening or navigating the menu must not record'); },
+    ...recorder,
+  };
+  const ui = {
+    custom: (factory, options) => new Promise(resolve => {
+      overlays.push(options);
+      panel = factory({ terminal: { rows }, requestRender() {} }, plain, getKeybindings(), value => { closed = true; resolve(value); });
+    }),
+    notify: (m, kind) => notices.push({ m, kind }), setWidget() {}, setStatus() {},
+  };
+  const prepared = [], installed = [];
+  const setupImpl = { ensure: async model => { prepared.push(model); }, install: async model => { installed.push(model); }, ...setup };
+  const task = settings(ui, loaded, rec, abort.signal, context, setupImpl);
+  await tick();
+  const settle = async () => { for (let i = 0; i < 3; ++i) { await panel.drain(); await tick(); } };
+  const key = async data => { panel.handleInput(data); await settle(); };
+  const keys = async (...data) => { for (const d of data) await key(d); };
+  const focused = () => panel.controller.session.focusedId;
+  const goto = async id => {
+    let current = position(focused());
+    while (current < position(id)) { await key(KEY.down); current++; }
+    while (current > position(id)) { await key(KEY.up); current--; }
+    assert.equal(focused(), id);
+  };
+  const screen = (width = 100) => panel.render(width).join('\n');
+  return {
+    dir, loaded, task, key, keys, goto, screen, focused, prepared, installed, notices, overlays, abort, settle,
+    panel: () => panel, closed: () => closed, enumerated: () => enumerated, captured: () => captured,
+    cleanup: async () => { abort.abort(); await task.catch(() => {}); await rm(dir, { recursive: true, force: true }); },
+  };
 }
 
-test('menu opens immediately, without enumeration/capture/network; Esc preserves config',async () => {
+test('/voice opens at once without enumeration, capture, network or writes; Esc on a clean panel closes', async () => {
   const f = await fixture();
   try {
-    const rendered = f.panel.render(100).join('\n'); assert.match(rendered,/Voice \/ Settings/); assert.match(rendered,/Ctrl\+S/); assert.match(rendered,/local Whisper/); assert.match(rendered,/Microphone/); assert.match(rendered,/Transcription language/);
-    assert.equal(f.enumerated(),0); await f.key('\x1b'); await f.task; await assert.rejects(stat(f.loaded.globalPath),{ code:'ENOENT' });
-  } finally { await f.cleanup(); }
-});
-test('edit microphone/shortcut in one menu; only Ctrl+S persists and leaves panel open',async () => {
-  const f = await fixture();
-  try {
-    await f.down(1); await f.key('\r'); await f.key('\r');
-    assert.equal(f.enumerated(),1); await assert.rejects(stat(f.loaded.globalPath),{ code:'ENOENT' });
-    await f.down(2); await f.key('\r'); await f.down(1); await f.key('\r');
-    await f.key('\x13'); await f.panel.drain();
-    const data = JSON.parse(await readFile(f.loaded.globalPath,'utf8')); assert.equal(data.shortcut,'f9'); assert.equal(data.capture.deviceId,'Mic José');
-    assert.match(f.panel.render(100).join('\n'),/Saved/); await f.key('\x1b'); await f.task;
-  } finally { await f.cleanup(); }
-});
-test('exactly three local models; selecting is a draft, Ctrl+S prepares then saves',async () => {
-  const f = await fixture();
-  try {
-    await f.key('\r');
-    const menu = f.panel.render(110).join('\n');
-    for (const name of ['tiny','base','small']) assert.match(menu,new RegExp(name));
-    assert.doesNotMatch(menu,/OpenRouter|Endpoint|Credencial|Provedor/);
-    await f.down(2); await f.key('\r');
-    assert.match(f.panel.render(110).join('\n'),/Whisper small/);
-    assert.deepEqual(f.prepared,[]); await assert.rejects(stat(f.loaded.globalPath),{code:'ENOENT'});
-    await f.key('\x13'); await f.panel.drain();
-    assert.deepEqual(f.prepared,['small']);
-    assert.equal(JSON.parse(await readFile(f.loaded.globalPath,'utf8')).transcription.model,'small');
+    const s = f.screen(120);
+    for (const text of ['Voice / Settings', 'local Whisper', 'Model', 'Whisper tiny · ~45 MB', 'Microphone', 'Transcription language',
+      'Shortcut', 'Language', 'English', 'Check model', 'Prepare model', 'Download / repair', 'Test microphone', 'Test dictation',
+      'Diagnostics', 'Start dictation', 'Cancel dictation', 'Ctrl+S save', 'Esc close']) assert.ok(s.includes(text), `missing ${text}`);
+    assert.equal(f.enumerated(), 0); assert.equal(f.captured(), 0);
+    assert.deepEqual(f.prepared, []); assert.deepEqual(f.installed, []);
+    await f.key(KEY.esc);
+    assert.equal(await f.task, undefined); assert.equal(f.closed(), true);
+    await assert.rejects(stat(f.loaded.globalPath), { code: 'ENOENT' });
   } finally { await f.cleanup(); }
 });
 
-test('failed or cancelled model download never saves the selected model',async () => {
-  for (const cancelled of [false,true]) {
-    const f = await fixture({ensure:async (_model,signal) => {
-      if (!cancelled) throw new VoiceError('LOCAL_INSTALL','Download unavailable.');
-      await new Promise(resolve=>signal.addEventListener('abort',resolve,{once:true}));
-      signal.throwIfAborted();
-    }});
+test('microphone choices load only on Enter; edits are drafts; Ctrl+S saves and keeps the panel open', async () => {
+  const f = await fixture();
+  try {
+    await f.goto('microphone'); assert.equal(f.enumerated(), 0);
+    await f.key(KEY.enter); assert.equal(f.enumerated(), 1);
+    assert.match(f.screen(), /Mic José/); await f.keys(KEY.down, KEY.enter);
+    await f.goto('shortcut'); await f.keys(KEY.enter, KEY.down, KEY.enter);
+    assert.match(f.screen(), /Voice \/ Settings \*/); assert.match(f.screen(), /F9 \(\/reload pending\)/);
+    await assert.rejects(stat(f.loaded.globalPath), { code: 'ENOENT' });
+    await f.key(KEY.ctrlS);
+    const data = JSON.parse(await readFile(f.loaded.globalPath, 'utf8'));
+    assert.equal(data.shortcut, 'f9'); assert.equal(data.capture.deviceId, 'usb');
+    assert.equal(f.closed(), false);
+    assert.match(f.screen(), /Saved\. Project\/env\/CLI overrides keep precedence\./);
+    assert.doesNotMatch(f.screen(), /Voice \/ Settings \*/);
+    await f.key(KEY.esc); await f.task;
+  } finally { await f.cleanup(); }
+});
+
+test('exactly three local models; selecting is a draft; Ctrl+S prepares then saves', async () => {
+  const f = await fixture();
+  try {
+    await f.key(KEY.enter);
+    const menu = f.screen(110);
+    for (const name of ['tiny — ~45 MB · lighter', 'base', 'small']) assert.ok(menu.includes(name), `missing ${name}`);
+    assert.doesNotMatch(menu, /OpenRouter|Endpoint|Credential|Provider/);
+    await f.keys(KEY.down, KEY.down, KEY.enter);
+    assert.match(f.screen(110), /Whisper small/);
+    assert.deepEqual(f.prepared, []); await assert.rejects(stat(f.loaded.globalPath), { code: 'ENOENT' });
+    await f.key(KEY.ctrlS);
+    assert.deepEqual(f.prepared, ['small']);
+    assert.equal(JSON.parse(await readFile(f.loaded.globalPath, 'utf8')).transcription.model, 'small');
+  } finally { await f.cleanup(); }
+});
+
+test('failed or Esc-cancelled model download never saves and keeps the draft for Ctrl+S', async () => {
+  for (const cancelled of [false, true]) {
+    let attempts = 0;
+    const f = await fixture({ setup: { ensure: async (_model, signal, progress) => {
+      ++attempts; progress('Downloading Whisper small (~465 MB)…');
+      if (!cancelled) throw new VoiceError('LOCAL_INSTALL', 'Download unavailable.');
+      await new Promise(resolve => signal.addEventListener('abort', resolve, { once: true }));
+      throw new VoiceError('CANCELLED', 'Local operation canceled.');
+    } } });
     try {
-      await f.key('\r'); await f.down(1); await f.key('\r'); await f.key('\x13');
-      if(cancelled) await f.key('\x1b');
-      await f.panel.drain();
-      await assert.rejects(stat(f.loaded.globalPath),{code:'ENOENT'});
-      assert.equal(f.loaded.config.transcription.model,'tiny');
-      assert.match(f.panel.render(110).join('\n'),cancelled?/canceled/i:/Download unavailable/);
+      await f.keys(KEY.enter, KEY.down, KEY.down, KEY.enter);
+      f.panel().handleInput(KEY.ctrlS); await tick();
+      if (cancelled) {
+        assert.match(f.screen(110), /Downloading Whisper small/); assert.match(f.screen(110), /Esc cancel save/);
+        await f.key(KEY.esc);
+      } else await f.settle();
+      await assert.rejects(stat(f.loaded.globalPath), { code: 'ENOENT' });
+      assert.match(f.screen(110), cancelled ? /Save cancelled\. Your draft was kept\./ : /Download unavailable\. \[LOCAL_INSTALL\]/);
+      assert.match(f.screen(110), /Voice \/ Settings \*/); assert.match(f.screen(110), /Whisper small/);
+      assert.equal(f.closed(), false); assert.equal(attempts, 1);
     } finally { await f.cleanup(); }
   }
 });
 
-test('dirty Esc asks before discard, cancelled edit and abort never write',async () => {
+test('Esc in a field goes back without applying; dirty Esc warns, second Esc discards and closes', async () => {
   const f = await fixture();
   try {
-    await f.down(2); await f.key('\r'); await f.key('\x1b');
-    await f.key('\r'); await f.key('\x15'); await f.key('en'); await f.key('\r');
-    await f.key('\x1b'); assert.match(f.panel.render(100).join('\n'),/Unsaved changes/);
-    await f.key('\x1b'); await f.task; await assert.rejects(stat(f.loaded.globalPath),{ code:'ENOENT' });
+    await f.goto('language'); await f.key(KEY.enter);
+    await f.keys(KEY.ctrlU, 'e', 'n', KEY.esc);
+    assert.equal(f.closed(), false); assert.match(f.screen(), /Transcription language\s+pt\b/);
+    await f.keys(KEY.enter, KEY.ctrlU, 'e', 'n', KEY.enter);
+    assert.match(f.screen(), /Transcription language\s+en\b/);
+    await f.key(KEY.esc);
+    assert.equal(f.closed(), false); assert.match(f.screen(), /There are unsaved changes\./); assert.match(f.screen(), /Press Esc again to discard/);
+    await f.key(KEY.esc);
+    assert.equal(await f.task, undefined); assert.equal(f.closed(), true);
+    await assert.rejects(stat(f.loaded.globalPath), { code: 'ENOENT' });
   } finally { await f.cleanup(); }
 });
-test('panel renders Unicode without overflow at narrow/wide terminal widths',async () => {
+
+test('invalid transcription language is refused in the field and never saved', async () => {
   const f = await fixture();
-  try { for (const width of [12,24,40,80,120]) for (const line of f.panel.render(width)) assert.ok(visibleWidth(line)<=width,`${visibleWidth(line)} > ${width}`); }
-  finally { await f.cleanup(); }
+  try {
+    await f.goto('language'); await f.keys(KEY.enter, KEY.ctrlU, '!', '!', KEY.enter);
+    assert.match(f.screen(), /Use auto or a language code such as pt, en or es\./);
+    await f.key(KEY.ctrlS);
+    await assert.rejects(stat(f.loaded.globalPath), { code: 'ENOENT' });
+  } finally { await f.cleanup(); }
 });
 
-test('language preview saves only project locale with Ctrl+S and skips model/config preparation', async () => {
-  const scratch = await mkdtemp(join(tmpdir(),'voice-locale-settings-'));
-  const projectRoot = join(scratch,'project'); await mkdir(projectRoot);
-  let locale = 'en';
-  const f = await fixture({}, {
-    trusted:true, locale:() => locale, onLocaleChange:next => { locale = next; },
-    saveLocale:next => saveProjectLocale(projectRoot,true,next),
-  });
+test('Ctrl+S while editing commits the field then saves; an unknown error never leaks its payload', async () => {
+  let attempts = 0;
+  const f = await fixture({ setup: { ensure: async () => { if (++attempts === 1) throw new Error('upstream private payload'); } } });
   try {
-    await f.down(4); await f.key('\r'); await f.down(1); await f.key('\r');
-    assert.equal(locale,'pt-BR');
-    const preview = f.panel.render(100).join('\n');
-    assert.match(preview,/Voz \/ Configurações/); assert.match(preview,/Idioma/);
-    for (const width of [40,80,120]) for (const line of f.panel.render(width)) assert.ok(visibleWidth(line)<=width,`${visibleWidth(line)} > ${width}`);
-    await f.key('\r'); await f.key('\x1b[A'); await f.key('\r');
-    assert.equal(locale,'en'); assert.match(f.panel.render(100).join('\n'),/Voice \/ Settings/);
-    await f.key('\r'); await f.down(1); await f.key('\r'); assert.equal(locale,'pt-BR');
-    await f.key('\x13'); await f.panel.drain();
-    assert.equal(loadProjectLocale(projectRoot,true),'pt-BR');
-    assert.deepEqual(f.prepared,[]);
-    await assert.rejects(stat(f.loaded.globalPath),{code:'ENOENT'});
-    await f.key('\x1b'); await f.task;
-  } finally { await f.cleanup(); await rm(scratch,{recursive:true,force:true}); }
-});
-
-test('discarding a language preview restores English and does not write a preference', async () => {
-  const scratch = await mkdtemp(join(tmpdir(),'voice-locale-discard-'));
-  const projectRoot = join(scratch,'project'); await mkdir(projectRoot);
-  let locale = 'en';
-  const f = await fixture({}, {
-    trusted:true, locale:() => locale, onLocaleChange:next => { locale = next; },
-    saveLocale:next => saveProjectLocale(projectRoot,true,next),
-  });
-  try {
-    await f.down(4); await f.key('\r'); await f.down(1); await f.key('\r');
-    assert.equal(locale,'pt-BR');
-    await f.key('\x1b'); assert.match(f.panel.render(100).join('\n'),/alterações não salvas/i);
-    await f.key('\x1b'); await f.task;
-    assert.equal(locale,'en'); assert.match(f.panel.render(100).join('\n'),/Voice \/ Settings/);
-    assert.equal(loadProjectLocale(projectRoot,true),'en');
-    await assert.rejects(stat(join(projectRoot,'.pi','pi-voice-control.locale.json')),{code:'ENOENT'});
-  } finally { await f.cleanup(); await rm(scratch,{recursive:true,force:true}); }
-});
-
-test('failed locale write keeps the preview dirty and retries without preparing a model', async () => {
-  const scratch = await mkdtemp(join(tmpdir(),'voice-locale-retry-'));
-  const projectRoot = join(scratch,'project'); await mkdir(projectRoot);
-  let locale = 'en', attempts = 0;
-  const f = await fixture({}, {
-    trusted:true, locale:() => locale, onLocaleChange:next => { locale = next; },
-    saveLocale:async next => { if (++attempts === 1) throw new LocaleSaveError(); await saveProjectLocale(projectRoot,true,next); },
-  });
-  try {
-    await f.down(4); await f.key('\r'); await f.down(1); await f.key('\r');
-    await f.key('\x13'); await f.panel.drain();
-    assert.equal(attempts,1); assert.equal(loadProjectLocale(projectRoot,true),'en');
-    assert.match(f.panel.render(100).join('\n'),/Não foi possível salvar a preferência de idioma/);
-    assert.match(f.panel.render(100).join('\n'),/Configurações \*/);
-    await f.key('\x13'); await f.panel.drain();
-    assert.equal(attempts,2); assert.equal(loadProjectLocale(projectRoot,true),'pt-BR');
-    assert.deepEqual(f.prepared,[]);
-    await assert.rejects(stat(f.loaded.globalPath),{code:'ENOENT'});
-  } finally { await f.cleanup(); await rm(scratch,{recursive:true,force:true}); }
+    await f.goto('language'); await f.keys(KEY.enter, KEY.ctrlU, 'e', 's', KEY.ctrlS);
+    assert.ok(!f.screen().includes('private payload'));
+    assert.match(f.screen(), /Voice operation failed; run \/voice doctor\. \[INTERNAL\]/);
+    await assert.rejects(stat(f.loaded.globalPath), { code: 'ENOENT' });
+    await f.key(KEY.ctrlS);
+    assert.equal(JSON.parse(await readFile(f.loaded.globalPath, 'utf8')).language, 'es');
+    assert.equal(f.closed(), false);
+  } finally { await f.cleanup(); }
 });
 
 test('failed config write keeps its draft available for a later Ctrl+S retry', async () => {
   const f = await fixture();
   try {
     await mkdir(f.loaded.globalPath);
-    await f.key('\r'); await f.down(2); await f.key('\r'); await f.key('\x13'); await f.panel.drain();
-    assert.equal(f.loaded.config.transcription.model,'tiny');
-    assert.match(f.panel.render(110).join('\n'),/\*/);
-    assert.deepEqual(f.prepared,['small']);
+    await f.keys(KEY.enter, KEY.down, KEY.down, KEY.enter, KEY.ctrlS);
+    assert.match(f.screen(110), /Voice \/ Settings \*/); assert.match(f.screen(110), /\[INTERNAL\]/);
+    assert.deepEqual(f.prepared, ['small']);
     await rmdir(f.loaded.globalPath);
-    await f.key('\x13'); await f.panel.drain();
-    assert.equal(JSON.parse(await readFile(f.loaded.globalPath,'utf8')).transcription.model,'small');
-    assert.deepEqual(f.prepared,['small','small']);
+    await f.key(KEY.ctrlS);
+    assert.equal(JSON.parse(await readFile(f.loaded.globalPath, 'utf8')).transcription.model, 'small');
+    assert.deepEqual(f.prepared, ['small', 'small']);
   } finally { await f.cleanup(); }
+});
+
+test('renders within 40/80/120 columns with Unicode device names, and asks to resize below 40x12', async () => {
+  const f = await fixture();
+  try {
+    const check = label => { for (const width of [40, 80, 120]) for (const line of f.panel().render(width)) assert.ok(visibleWidth(line) <= width, `${label}: ${visibleWidth(line)} > ${width}: ${line}`); };
+    check('list');
+    await f.goto('microphone'); await f.key(KEY.enter); check('choices');
+    await f.keys(KEY.down, KEY.enter); check('chosen');
+    assert.match(f.screen(120), /マイク USB/);
+    await f.goto('language'); await f.key(KEY.enter); check('editing'); await f.key(KEY.esc);
+    await f.key(KEY.esc); check('decision');
+    for (const width of [20, 39]) {
+      const lines = f.panel().render(width);
+      for (const line of lines) assert.ok(visibleWidth(line) <= width);
+      assert.match(lines.join(' '), /Terminal too small/);
+    }
+    assert.equal(f.overlays[0].overlayOptions.minWidth, 40);
+  } finally { await f.cleanup(); }
+});
+
+test('language preview switches the panel live; Ctrl+S saves only the project locale', async () => {
+  const scratch = await mkdtemp(join(tmpdir(), 'voice-locale-settings-'));
+  const projectRoot = join(scratch, 'project'); await mkdir(projectRoot);
+  let locale = 'en';
+  const f = await fixture({ context: { trusted: true, locale: () => locale, onLocaleChange: next => { locale = next; },
+    saveLocale: next => saveProjectLocale(projectRoot, true, next) } });
+  try {
+    await f.goto('interface-language'); await f.keys(KEY.enter, KEY.down, KEY.enter);
+    assert.equal(locale, 'pt-BR');
+    const preview = f.screen(120);
+    for (const text of ['Voz / Configurações *', 'Idioma', 'Português (Brasil)', 'Modelo', 'Microfone', 'Verificar modelo', 'Testar ditado', 'Ctrl+S salvar'])
+      assert.ok(preview.includes(text), `missing ${text}`);
+    for (const english of ['Voice / Settings', 'Check model', 'Test dictation', 'navigate', 'Ctrl+S save']) assert.ok(!preview.includes(english), `English left: ${english}`);
+    for (const width of [40, 80, 120]) for (const line of f.panel().render(width)) assert.ok(visibleWidth(line) <= width);
+    await f.keys(KEY.enter, KEY.up, KEY.enter);
+    assert.equal(locale, 'en'); assert.match(f.screen(), /Voice \/ Settings/); assert.doesNotMatch(f.screen(120), /Configurações|navegar|Salvar|Idioma/);
+    await f.keys(KEY.enter, KEY.down, KEY.enter); assert.equal(locale, 'pt-BR');
+    await f.key(KEY.ctrlS);
+    assert.equal(loadProjectLocale(projectRoot, true), 'pt-BR');
+    assert.match(f.screen(), /Salvo\. As substituições do projeto\/env\/CLI continuam tendo precedência\./);
+    assert.deepEqual(f.prepared, []);
+    await assert.rejects(stat(f.loaded.globalPath), { code: 'ENOENT' });
+    await f.key(KEY.esc); await f.task; assert.equal(locale, 'pt-BR');
+  } finally { await f.cleanup(); await rm(scratch, { recursive: true, force: true }); }
+});
+
+test('discarding a language preview restores English and writes no preference', async () => {
+  const scratch = await mkdtemp(join(tmpdir(), 'voice-locale-discard-'));
+  const projectRoot = join(scratch, 'project'); await mkdir(projectRoot);
+  let locale = 'en';
+  const f = await fixture({ context: { trusted: true, locale: () => locale, onLocaleChange: next => { locale = next; },
+    saveLocale: next => saveProjectLocale(projectRoot, true, next) } });
+  try {
+    await f.goto('interface-language'); await f.keys(KEY.enter, KEY.down, KEY.enter);
+    assert.equal(locale, 'pt-BR');
+    await f.key(KEY.esc); assert.match(f.screen(), /Há alterações não salvas/);
+    await f.key(KEY.esc); await f.task;
+    assert.equal(locale, 'en');
+    assert.equal(loadProjectLocale(projectRoot, true), 'en');
+    await assert.rejects(stat(join(projectRoot, '.pi', 'pi-voice-control.locale.json')), { code: 'ENOENT' });
+  } finally { await f.cleanup(); await rm(scratch, { recursive: true, force: true }); }
+});
+
+test('failed locale write keeps the preview dirty and retries without preparing a model', async () => {
+  const scratch = await mkdtemp(join(tmpdir(), 'voice-locale-retry-'));
+  const projectRoot = join(scratch, 'project'); await mkdir(projectRoot);
+  let locale = 'en', attempts = 0;
+  const f = await fixture({ context: { trusted: true, locale: () => locale, onLocaleChange: next => { locale = next; },
+    saveLocale: async next => { if (++attempts === 1) throw new LocaleSaveError(); await saveProjectLocale(projectRoot, true, next); } } });
+  try {
+    await f.goto('interface-language'); await f.keys(KEY.enter, KEY.down, KEY.enter, KEY.ctrlS);
+    assert.equal(attempts, 1); assert.equal(loadProjectLocale(projectRoot, true), 'en');
+    assert.match(f.screen(), /Não foi possível salvar a preferência de idioma/);
+    assert.match(f.screen(), /Configurações \*/);
+    await f.key(KEY.ctrlS);
+    assert.equal(attempts, 2); assert.equal(loadProjectLocale(projectRoot, true), 'pt-BR');
+    assert.deepEqual(f.prepared, []);
+    await assert.rejects(stat(f.loaded.globalPath), { code: 'ENOENT' });
+  } finally { await f.cleanup(); await rm(scratch, { recursive: true, force: true }); }
+});
+
+test('untrusted project keeps English: the language row is locked with the reason', async () => {
+  const f = await fixture({ context: { trusted: false } });
+  try {
+    assert.match(f.screen(120), /\[locked: project trust\]/);
+    await f.goto('interface-language'); await f.key(KEY.enter);
+    assert.match(f.screen(120), /Project trust is required to change the interface language\./);
+    assert.doesNotMatch(f.screen(120), /Português/);
+  } finally { await f.cleanup(); }
+});
+
+test('project/env/CLI overrides show their source, are not editable and never leak into the global file', async () => {
+  const f = await fixture({ loaded: async dir => {
+    await mkdir(join(dir, 'project', '.pi'), { recursive: true });
+    await writeFile(join(dir, 'project', '.pi', 'voice-control.json'), JSON.stringify({ capture: { deviceId: 'project mic' } }));
+    return loadConfig(join(dir, 'project'), { PI_CODING_AGENT_DIR: join(dir, 'agent'), PI_VOICE_MODEL: 'base' }, { language: 'es' }, dir);
+  } });
+  try {
+    const s = f.screen(120);
+    assert.match(s, /Whisper base.*\[source: PI_VOICE_MODEL\]/); assert.match(s, /project mic.*\[source: \.pi\/voice-control\.json\]/);
+    assert.match(s, /es.*\[source: --voice-language\]/);
+    await f.key(KEY.enter); assert.match(f.screen(120), /PI_VOICE_MODEL\. Change it at the source|set by PI_VOICE_MODEL/);
+    await f.goto('shortcut'); await f.keys(KEY.enter, KEY.down, KEY.enter, KEY.ctrlS);
+    const saved = JSON.parse(await readFile(f.loaded.globalPath, 'utf8'));
+    assert.equal(saved.shortcut, 'f9');
+    assert.equal(saved.transcription.model, 'tiny'); assert.equal(saved.capture.deviceId, 'default'); assert.equal(saved.language, 'pt');
+    assert.deepEqual(f.prepared, ['tiny']);
+  } finally { await f.cleanup(); }
+});
+
+test('confirmed test action starts on Go back; Esc cancels the running capture and the panel stays usable', async () => {
+  const started = deferred(); let aborted = false;
+  const f = await fixture({ recorder: { start: async (_options, signal) => {
+    started.resolve();
+    await new Promise(resolve => signal.addEventListener('abort', resolve, { once: true }));
+    aborted = true; throw new VoiceError('CANCELLED', 'Recording canceled.');
+  } } });
+  try {
+    await f.goto('mic-test'); await f.key(KEY.enter);
+    assert.match(f.screen(), /Record from the microphone for 2 seconds\?/); assert.match(f.screen(), />\s*\[Go back\]/);
+    await f.key(KEY.enter); assert.doesNotMatch(f.screen(), /Record from the microphone/);
+    await f.keys(KEY.enter, KEY.down);
+    f.panel().handleInput(KEY.enter); await started.promise; await tick();
+    assert.match(f.screen(), /Esc cancel/);
+    await f.key(KEY.esc);
+    assert.equal(aborted, true); assert.match(f.screen(), /Operation cancelled\./);
+    assert.equal(f.closed(), false);
+    await f.key(KEY.down); assert.equal(f.focused(), 'stt-test');
+  } finally { await f.cleanup(); }
+});
+
+test('a result that arrives after Esc is reported but not used', async () => {
+  const gate = deferred();
+  const f = await fixture({ setup: { install: async (_model, _signal, progress) => { progress('Downloading and preparing local Whisper…'); await gate.promise; } } });
+  try {
+    await f.goto('install'); f.panel().handleInput(KEY.enter); await tick(); await tick();
+    assert.match(f.screen(), /Downloading and preparing local Whisper…/);
+    f.panel().handleInput(KEY.esc); await tick(); gate.resolve(); await f.settle();
+    assert.match(f.screen(), /Prepare model finished before the cancellation took effect/);
+    assert.doesNotMatch(f.screen(), /Model is ready/);
+    assert.equal(f.closed(), false);
+  } finally { await f.cleanup(); }
+});
+
+test('start dictation needs a saved draft; cancel closes at once and returns its action', async () => {
+  const f = await fixture();
+  try {
+    await f.keys(KEY.enter, KEY.down, KEY.enter);
+    await f.goto('start'); await f.key(KEY.enter);
+    assert.equal(f.closed(), false); assert.match(f.screen(), /Press Ctrl\+S to save changes before starting dictation\./);
+    await f.key(KEY.ctrlS); await f.key(KEY.enter);
+    assert.equal(await f.task, 'start');
+  } finally { await f.cleanup(); }
+  const g = await fixture({ context: { state: 'RECORDING' } });
+  try {
+    assert.match(g.screen(), /Stop and transcribe/);
+    await g.keys(KEY.enter, KEY.down, KEY.enter);
+    await g.goto('cancel'); await g.key(KEY.enter); assert.equal(await g.task, 'cancel');
+  } finally { await g.cleanup(); }
+});
+
+test('while dictation is busy, checks and tests are unavailable and the microphone list says why', async () => {
+  const f = await fixture({ context: { busy: true } });
+  try {
+    assert.match(f.screen(120), /unavailable: stop or cancel dictation first/);
+    await f.goto('microphone'); await f.key(KEY.enter);
+    assert.equal(f.enumerated(), 0); assert.match(f.screen(120), /Stop or cancel dictation before changing settings or running a test\. \[BUSY\]/);
+    await f.goto('doctor'); await f.key(KEY.enter); assert.match(f.screen(120), /Unavailable: stop or cancel dictation first/);
+  } finally { await f.cleanup(); }
+});
+
+test('parent abort closes the panel and cancels the running operation', async () => {
+  let signalSeen;
+  const f = await fixture({ setup: { install: (_m, signal) => { signalSeen = signal; return new Promise((_, reject) => signal.addEventListener('abort', () => reject(new VoiceError('CANCELLED', 'x')), { once: true })); } } });
+  try {
+    await f.goto('install'); f.panel().handleInput(KEY.enter); await tick(); await tick();
+    f.abort.abort();
+    assert.equal(await f.task, undefined); assert.equal(f.closed(), true); assert.equal(signalSeen.aborted, true);
+  } finally { await f.cleanup(); }
+});
+
+test('parent abort waits for an operation that ignores its signal; nothing writes to the UI after close', async () => {
+  const gate = deferred(); let finished = false;
+  const f = await fixture({ setup: { install: async (_model, _signal, progress) => {
+    progress('Downloading and preparing local Whisper…'); await gate.promise; finished = true; progress('late progress');
+  } } });
+  try {
+    await f.goto('install'); f.panel().handleInput(KEY.enter); await tick(); await tick();
+    assert.match(f.screen(), /Downloading and preparing local Whisper…/);
+    let returned = false; void f.task.then(() => { returned = true; });
+    f.abort.abort();
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.equal(f.closed(), true);
+    assert.equal(returned, false, 'settings() must not return while the operation still runs');
+    gate.resolve();
+    assert.equal(await f.task, undefined); assert.equal(finished, true);
+    assert.doesNotMatch(f.screen(), /late progress/); assert.deepEqual(f.notices, []);
+  } finally { await f.cleanup(); }
+});
+
+test('parent abort during the microphone test returns only after FFmpeg cleanup', async () => {
+  const started = deferred(), release = deferred(); let cancelled = false;
+  const f = await fixture({ recorder: { start: async () => {
+    started.resolve();
+    return { completed: new Promise(() => {}), stop: async () => { throw new Error('must not stop'); },
+      cancel: async () => { await release.promise; cancelled = true; } };
+  } } });
+  try {
+    await f.goto('mic-test'); await f.keys(KEY.enter, KEY.down);
+    f.panel().handleInput(KEY.enter); await started.promise; await tick();
+    let returned = false; void f.task.then(() => { returned = true; });
+    f.abort.abort();
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.equal(f.closed(), true); assert.equal(returned, false);
+    release.resolve();
+    assert.equal(await f.task, undefined); assert.equal(cancelled, true);
+  } finally { await f.cleanup(); }
+});
+
+test('help (?) shows the focused field description once, in English and Portuguese', async () => {
+  for (const [locale, snippet] of [['en', 'Tiny is lighter'], ['pt-BR', 'Tiny é mais leve']]) {
+    const f = await fixture({ rows: 80, context: { trusted: true, locale: () => locale } });
+    try {
+      await f.key('?');
+      assert.equal(f.panel().controller.help, true);
+      const s = f.screen(80);
+      assert.equal(s.split(snippet).length - 1, 1, s);
+    } finally { await f.cleanup(); }
+  }
+});
+
+test('an invalid global value masked by a project override never copies project values on Ctrl+S', async () => {
+  const f = await fixture({ loaded: async dir => {
+    await mkdir(join(dir, 'agent'), { recursive: true }); await mkdir(join(dir, 'project', '.pi'), { recursive: true });
+    await writeFile(join(dir, 'agent', 'voice-control.json'), JSON.stringify({ language: 'Portuguese', shortcut: 'f9' }));
+    await writeFile(join(dir, 'project', '.pi', 'voice-control.json'), JSON.stringify({ language: 'pt', capture: { silenceRms: 0.012 } }));
+    return loadConfig(join(dir, 'project'), { PI_CODING_AGENT_DIR: join(dir, 'agent') }, {}, dir);
+  } });
+  try {
+    assert.equal(f.loaded.config.capture.silenceRms, 0.012);
+    assert.match(f.screen(160), /The global settings file has invalid values \(language\)/);
+    await f.goto('shortcut'); await f.keys(KEY.enter, KEY.down, KEY.enter, KEY.ctrlS);
+    const saved = JSON.parse(await readFile(f.loaded.globalPath, 'utf8'));
+    assert.equal(saved.shortcut, 'f10');
+    assert.equal(saved.capture.silenceRms, defaults.capture.silenceRms);
+    assert.equal(saved.language, defaults.language);
+  } finally { await f.cleanup(); }
+});
+
+test('a save that never confirms becomes unknown; Ctrl+S reads storage instead of writing again', async () => {
+  let reads = 0; const hung = deferred();
+  const f = await fixture({
+    setup: { ensure: () => hung.promise },
+    context: { reload: () => { ++reads; return { config: structuredClone(defaults), globalPath: '', projectPath: '', ffmpegPath: 'ffmpeg' }; } },
+  });
+  try {
+    await f.keys(KEY.enter, KEY.down, KEY.enter);
+    f.panel().handleInput(KEY.ctrlS); await tick();
+    f.panel().handleInput(KEY.esc);
+    await new Promise(resolve => setTimeout(resolve, 1700)); await f.settle();
+    assert.match(f.screen(110), /not confirmed|could not be confirmed/i);
+    await f.key(KEY.ctrlS);
+    assert.equal(reads, 1); await assert.rejects(stat(f.loaded.globalPath), { code: 'ENOENT' });
+    assert.match(f.screen(110), /Voice \/ Settings \*/);
+    // The late result settles the work; its cancelled save must still not write.
+    hung.resolve(); f.abort.abort(); await f.task;
+    await assert.rejects(stat(f.loaded.globalPath), { code: 'ENOENT' });
+  } finally { hung.resolve(); await f.cleanup(); }
 });
