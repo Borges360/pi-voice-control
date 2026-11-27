@@ -1,6 +1,6 @@
 {
   "name": "@borges360/pi-voice-control",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Native Pi dictation with FFmpeg and offline Whisper tiny, base or small",
   "license": "MIT",
   "repository": {
